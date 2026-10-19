@@ -1,0 +1,48 @@
+# Never commit the game, its assets, or Microsoft XDK code. Users supply their own dump.
+game/
+*.xbe
+*.iso
+*.xiso
+*.bin.bak
+
+# Third-party tooling is cloned/built locally, not vendored
+tools/extract-xiso/
+tools/XbSymbolDatabase/
+tools/ghidra-xbe/
+tools/bin/
+
+# Ghidra projects hold the analysed game binary
+ghidra/
+*.gzf
+*.rep/
+
+# exFAT / macOS junk
+._*
+.DS_Store
+
+# Derived from the game binary: decompiler output and string dumps stay local
+work/
+notes/ghidra-strings.txt
+
+# Loader build output and run artifacts (the HDD folder holds game-written data)
+loader/build/
+hdd/
+*.raw
+black.log
+
+# Local launcher shortcut (machine-specific; its icon comes from the user's XBE)
+*.lnk
+
+# Port settings written by the menu bar (machine-specific)
+black.ini
+
+# Performance recordings (Tools > Record performance, F2): machine-specific, may show game function names
+perf/
+
+# Release zips and their symbols (tools/make_release.ps1)
+dist/
+# The port's rebuilt front-end files (made at start from the user's game files)
+cache/
+
+# release packages (uploaded to GitHub Releases, not committed)
+release/
