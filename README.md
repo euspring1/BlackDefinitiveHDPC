@@ -126,26 +126,19 @@ This builds `black.exe` and `blackrt.dll`.
 
 **BlackHD-PC** — Spring, **Spring Code**: all the improvements listed above.
 
-### Based on
-
-- black-pc by Spark198rus — the native port this project builds on.
-
 ### Projects studied
 
-- [BLACK-XBERecomp](https://github.com/TGP482/BLACK-XBERecomp) by TGP482 — another PC version of BLACK (static
-  recompilation), compared for features.
-- [Cxbx-Reloaded](https://github.com/Cxbx-Reloaded/Cxbx-Reloaded) and [xemu](https://github.com/xemu-project/xemu) —
-  references for how the Xbox kernel and the NV2A graphics chip behave (no code copied).
-- [XbSymbolDatabase](https://github.com/Cxbx-Reloaded/XbSymbolDatabase) — identifies the Xbox library functions in the
-  game.
-- [nxdk](https://github.com/XboxDev/nxdk) — its headers document the Xbox kernel's types.
+- black-pc by Spark198rus — native Windows port of BLACK, compared for features.
+- BLACK-XBERecomp by TGP482 — another PC version of BLACK (static recompilation), compared for features.
+- Cxbx-Reloaded and xemu — references for how the Xbox kernel and the NV2A graphics chip behave (no code copied).
+- XbSymbolDatabase (Cxbx-Reloaded) — identifies the Xbox library functions in the game.
+- nxdk (XboxDev) — its headers document the Xbox kernel's types.
 
 ### Tools used
 
-- [REA — Reverse Engineer Anything](https://github.com/morluto/rea) by morluto — reverse-engineering workbench.
-- [Ghidra](https://github.com/NationalSecurityAgency/ghidra) (NSA) with [ghidra-xbe](https://github.com/XboxDev/ghidra-xbe)
-  (XboxDev) — disassembly and decompilation of the game.
-- [extract-xiso](https://github.com/XboxDev/extract-xiso) (XboxDev) — extracts the game from the disc image.
+- REA — Reverse Engineer Anything, by morluto — reverse-engineering workbench.
+- Ghidra (NSA) with ghidra-xbe (XboxDev) — disassembly and decompilation of the game.
+- extract-xiso (XboxDev) — extracts the game from the disc image.
 - Visual Studio Build Tools and CMake (Microsoft / Kitware) — building the port.
 - Git, Node.js and Eclipse Temurin (OpenJDK) — the development environment.
 
