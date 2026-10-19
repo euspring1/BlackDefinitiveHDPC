@@ -2,6 +2,11 @@
 // the game reads directly (device object fields, render/texture state arrays) up to date and drives the
 // host Direct3D 9 device.
 #include "d3d/device.h"
+#include "audio_defaults.h"
+#include "d3d/cursor.h"
+#include "d3d/fps.h"
+#include "d3d/subtitles.h"
+#include "fe/restart.h"
 
 #include "d3d/dispatch.h"
 #include "d3d/draw.h"
@@ -1225,6 +1230,8 @@ void recover_device(bool force)
     }
     if (hr != D3DERR_DEVICENOTRESET) return; // still lost (D3DERR_DEVICELOST): ask again next frame
     release_host_targets();
+    for (DWORD s = 0; s < 4; s++) d->SetTexture(s, nullptr); // the texture pack's textures are D3DPOOL_DEFAULT too
+    texture_release_pack();
     d->SetRenderTarget(0, g_host_backbuffer);
     d->SetDepthStencilSurface(g_host_depth);
     if (g_host_backbuffer) g_host_backbuffer->Release();
@@ -1309,6 +1316,10 @@ uint32_t __stdcall D3DDevice_Swap(uint32_t Flags)
     pb_flush();
     perf::swap_begin();
     pace_swap();
+    subtitles_tick(host_w(g_width), host_h(g_height)); // over the movie, before the picture is presented
+    fps_tick(host_w(g_width), host_h(g_height));       // the frame rate counter, same place
+    cursor_tick(host_w(g_width), host_h(g_height));    // the port's own menu cursor, over everything
+    restart_poll();                                    // a mod changed and the player is back at the main menu
     present_backbuffer();
     capture_frame();
     uint32_t frames = ++g_frame_count;
@@ -1334,6 +1345,7 @@ uint32_t __stdcall D3DDevice_Swap(uint32_t Flags)
     if (host3d::present() == D3DERR_DEVICELOST || g_device_lost || force) recover_device(force);
     check_render_size();
     perf::frame_end(host_w(g_width), host_h(g_height));
+    audio_defaults_frame();
     dev_field<uint32_t>(DEV_SWAPCOUNT)++;
     g_swap_count++;
     if (frames % 60 == 0 || frames < 4)

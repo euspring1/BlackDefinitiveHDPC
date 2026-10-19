@@ -6,6 +6,7 @@
 #include "d3d/dispatch.h"
 #include "d3d/host.h"
 #include "d3d/state.h"
+#include "d3d/texpack.h"
 #include "perf.h"
 
 #include <wincodec.h>
@@ -30,6 +31,7 @@ struct Entry {
     uint32_t checked_frame = ~0u; // the frame the contents were last checked (hashing on every bind cost ~8 ms a frame)
     uint32_t stable = 0;          // consecutive checks without a change
     bool replaced = false;        // tex is a PNG from textures\ (see replacement), not the game's texels
+    bool pack = false;            // tex is from the texture pack (texpack.cpp; D3DPOOL_DEFAULT)
 };
 
 // A texture whose contents did not change for this many checks is checked every 16th frame only (busy
@@ -317,6 +319,10 @@ IWICImagingFactory *wic()
 
 std::set<IDirect3DBaseTexture9 *> g_replaced; // host textures made from PNGs (draws force mipmapped sampling)
 
+} // namespace
+
+IWICImagingFactory *wic_factory() { return wic(); }
+
 // The next mip level of a BGRA image: 2x2 boxes averaged with alpha weighting (no dark fringes at edges).
 std::vector<uint32_t> half_size(const std::vector<uint32_t> &src, UINT w, UINT h, UINT nw, UINT nh)
 {
@@ -338,6 +344,8 @@ std::vector<uint32_t> half_size(const std::vector<uint32_t> &src, UINT w, UINT h
         }
     return dst;
 }
+
+namespace {
 
 // A host texture with a full mip chain from a BGRA image. A replacement is usually drawn smaller than it is (an HD
 // version of a small texture): the mips keep thin features (outlines) from flickering away when it is minified.
@@ -427,10 +435,81 @@ IDirect3DBaseTexture9 *load_replacement(const std::wstring &path)
     return t;
 }
 
+} // namespace
+
+// DXT1/3/5 blocks to BGRA (w x h, both multiples of 4 or the whole texture smaller than a block).
+std::vector<uint32_t> decode_dxt(const uint8_t *src, UINT pitch, UINT w, UINT h, D3DFORMAT fmt)
+{
+    std::vector<uint32_t> px((size_t)w * h);
+    UINT bsz = fmt == D3DFMT_DXT1 ? 8 : 16;
+    for (UINT by = 0; by < (h + 3) / 4; by++)
+        for (UINT bx = 0; bx < (w + 3) / 4; bx++) {
+            const uint8_t *b = src + (size_t)by * pitch + (size_t)bx * bsz;
+            uint8_t alpha[16];
+            std::fill(alpha, alpha + 16, 255);
+            if (fmt == D3DFMT_DXT3) {
+                for (int i = 0; i < 16; i++) alpha[i] = ((b[i / 2] >> (4 * (i & 1))) & 15) * 17;
+            } else if (fmt != D3DFMT_DXT1) {
+                uint32_t a[8] = {b[0], b[1]};
+                if (a[0] > a[1]) for (int i = 2; i < 8; i++) a[i] = ((8 - i) * a[0] + (i - 1) * a[1]) / 7;
+                else {
+                    for (int i = 2; i < 6; i++) a[i] = ((6 - i) * a[0] + (i - 1) * a[1]) / 5;
+                    a[6] = 0;
+                    a[7] = 255;
+                }
+                uint64_t bits = 0;
+                for (int i = 0; i < 6; i++) bits |= (uint64_t)b[2 + i] << (8 * i);
+                for (int i = 0; i < 16; i++) alpha[i] = (uint8_t)a[(bits >> (3 * i)) & 7];
+            }
+            if (bsz == 16) b += 8;
+            uint16_t c0 = b[0] | b[1] << 8, c1 = b[2] | b[3] << 8;
+            uint32_t c[4][4];
+            for (int k = 0; k < 2; k++) {
+                uint16_t v = k ? c1 : c0;
+                c[k][0] = (v >> 11) * 255 / 31;
+                c[k][1] = ((v >> 5) & 63) * 255 / 63;
+                c[k][2] = (v & 31) * 255 / 31;
+                c[k][3] = 255;
+            }
+            bool four = c0 > c1 || fmt != D3DFMT_DXT1;
+            for (int ch = 0; ch < 3; ch++) {
+                c[2][ch] = four ? (2 * c[0][ch] + c[1][ch]) / 3 : (c[0][ch] + c[1][ch]) / 2;
+                c[3][ch] = four ? (c[0][ch] + 2 * c[1][ch]) / 3 : 0;
+            }
+            c[2][3] = 255;
+            c[3][3] = four ? 255 : 0;
+            uint32_t idx = b[4] | b[5] << 8 | b[6] << 16 | (uint32_t)b[7] << 24;
+            for (int i = 0; i < 16; i++) {
+                UINT x = bx * 4 + (i & 3), y = by * 4 + i / 4;
+                if (x >= w || y >= h) continue;
+                const uint32_t *q = c[(idx >> (2 * i)) & 3];
+                uint32_t a = std::min<uint32_t>(alpha[i], q[3]);
+                px[(size_t)y * w + x] = a << 24 | q[0] << 16 | q[1] << 8 | q[2];
+            }
+        }
+    return px;
+}
+
+namespace {
+
+// Level 0 of a 2D texture as BGRA.
+std::vector<uint32_t> level0_bgra(const PixelContainer *pc, const uint32_t *pal, UINT *w, UINT *h)
+{
+    uint32_t pitch, lw, lh;
+    uint32_t off = texture_level_offset(pc, 0, 0, &pitch, &lw, &lh);
+    *w = lw;
+    *h = lh;
+    D3DFORMAT hf = host_format(fmt_of(pc));
+    if (hf != D3DFMT_A8R8G8B8) return decode_dxt((const uint8_t *)phys_to_virt(pc->Data) + off, pitch, lw, lh, hf);
+    std::vector<uint32_t> px((size_t)lw * lh);
+    upload_level(pc, 0, 0, (uint8_t *)px.data(), lw * 4, pal);
+    return px;
+}
+
 void dump_texture(IDirect3DBaseTexture9 *base, const PixelContainer *pc, const std::wstring &id)
 {
     static std::set<std::wstring> done;
-    if (!base || base->GetType() != D3DRTYPE_TEXTURE || format_info(fmt_of(pc)).compressed || !done.insert(id).second) return;
+    if (!base || base->GetType() != D3DRTYPE_TEXTURE || !done.insert(id).second) return;
     std::wstring dir = textures_dir() + L"\\dump";
     CreateDirectoryW(textures_dir().c_str(), nullptr);
     CreateDirectoryW(dir.c_str(), nullptr);
@@ -438,6 +517,15 @@ void dump_texture(IDirect3DBaseTexture9 *base, const PixelContainer *pc, const s
     D3DSURFACE_DESC desc;
     D3DLOCKED_RECT lr;
     if (FAILED(t->GetLevelDesc(0, &desc)) || FAILED(t->LockRect(0, &lr, nullptr, D3DLOCK_READONLY))) return;
+    std::vector<uint32_t> decoded;
+    if (desc.Format == D3DFMT_DXT1 || desc.Format == D3DFMT_DXT3 || desc.Format == D3DFMT_DXT5) {
+        decoded = decode_dxt((const uint8_t *)lr.pBits, lr.Pitch, desc.Width, desc.Height, desc.Format);
+        lr.pBits = decoded.data();
+        lr.Pitch = desc.Width * 4;
+    } else if (desc.Format != D3DFMT_A8R8G8B8 && desc.Format != D3DFMT_X8R8G8B8) {
+        t->UnlockRect(0);
+        return;
+    }
     IWICImagingFactory *f = wic();
     IWICStream *st = nullptr;
     IWICBitmapEncoder *enc = nullptr;
@@ -553,9 +641,9 @@ IDirect3DBaseTexture9 *host_texture(Resource *r, Palette *pal)
             e.tex->Release();
         }
         e.tex = nullptr;
-        e.replaced = false;
+        e.replaced = e.pack = false;
         bool flat = !(pc->Format & FMT_CUBEMAP) && ((pc->Format >> FMT_DIMENSION_SHIFT) & 0xF) != 3;
-        if (flat && (g_cfg.dump_textures || g_cfg.hd_reticle || !replacement_ids().empty())) {
+        if (flat && (g_cfg.dump_textures || g_cfg.hd_reticle || !replacement_ids().empty() || texpack::enabled())) {
             std::wstring id = texture_id(pc, bytes);
             if (replacement_ids().count(id)) {
                 e.tex = load_replacement(textures_dir() + L"\\" + id + L".png");
@@ -565,6 +653,11 @@ IDirect3DBaseTexture9 *host_texture(Resource *r, Palette *pal)
                 e.tex = make_hd_reticle(r, pal);
                 e.replaced = e.tex != nullptr;
                 if (e.replaced) logf("[tex] HUD atlas rebuilt at 4x with the HD reticle");
+            } else if (texpack::enabled()) {
+                UINT w, h;
+                std::vector<uint32_t> px = level0_bgra(pc, pal ? (const uint32_t *)phys_to_virt(pal->Data) : nullptr, &w, &h);
+                e.tex = texpack::lookup(id, px, w, h);
+                e.replaced = e.pack = e.tex != nullptr;
             }
             if (!e.tex) {
                 e.tex = create_and_upload(r, pal);
@@ -595,9 +688,25 @@ IDirect3DBaseTexture9 *host_texture(Resource *r, Palette *pal)
 bool texture_is_replaced(IDirect3DBaseTexture9 *t)
 {
     EnterCriticalSection(&g_cs);
-    bool r = g_replaced.count(t) != 0;
+    bool r = g_replaced.count(t) != 0 || texpack::owns(t);
     LeaveCriticalSection(&g_cs);
     return r;
+}
+
+void texture_release_pack()
+{
+    EnterCriticalSection(&g_cs);
+    for (auto &kv : g_cache) {
+        Entry &e = kv.second;
+        if (!e.pack) continue;
+        e.tex->Release();
+        e.tex = nullptr; // a different shape: loaded again at the next use
+        e.replaced = e.pack = false;
+        e.stable = 0;
+        e.checked_frame = ~0u;
+    }
+    texpack::release_all();
+    LeaveCriticalSection(&g_cs);
 }
 
 void texture_mark_dirty(const Resource *r)

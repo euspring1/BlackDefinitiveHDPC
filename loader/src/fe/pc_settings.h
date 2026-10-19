@@ -12,6 +12,9 @@ struct Group {
     std::vector<int> rows;
 };
 const std::vector<Group> &groups();
+// The MODS page (mods.h): one row per mod found under <port>\mods. Kept out of groups() because the game's Options
+// page copy has room for exactly four rows; the pause menu's PC SETTINGS page (fe/pause_ui.cpp) shows it too.
+const Group &mods_group();
 
 int count();                        // rows; row n shows its value in &PC_V<n> (fe/vars.h)
 const char *label(int n);           // the row's caption
@@ -23,6 +26,7 @@ bool is_slider(int n);              // a bullet bar (26 positions) instead of a 
 int slider_pos(int n);              // the slider's position, 0-100 (also given to the page as externObject.FEPCS<n>)
 void slide(int n, float pos);       // a slider moved to pos (0-100)
 bool restart_only(int n);           // applies at the next start: on the main menu's pages, not the pause menu's
+bool is_frame_rate(int n);          // FRAME RATE: applies at the next start, but shown in the pause menu too
 const char *link(int n);            // a row that opens a page (KEY BINDINGS), or nullptr
 
 } // namespace pcset

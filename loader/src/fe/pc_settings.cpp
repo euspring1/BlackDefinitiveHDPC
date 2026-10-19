@@ -11,6 +11,7 @@
 #include "fe/vars.h"
 #include "fov.h"
 #include "input/autoaim.h"
+#include "mods.h"
 #include "settings.h"
 #include "timing.h"
 
@@ -30,7 +31,7 @@ std::wstring number(float v, const wchar_t *fmt = L"%.1f")
     return s;
 }
 
-// render size: native multiples of the window, fixed heights, or the default (3 x Xbox)
+// render size: native multiples of the window, fixed heights, or RESOLUTION SCALE (below) x Xbox
 struct Res {
     bool native;
     float factor;
@@ -39,7 +40,7 @@ struct Res {
 };
 const Res kRes[] = {{true, 1.0f, 0, L"WINDOW SIZE"}, {true, 1.5f, 0, L"1.5 X WINDOW"}, {true, 2.0f, 0, L"2 X WINDOW"},
                     {false, 1.0f, 720, L"720P"},     {false, 1.0f, 1080, L"1080P"},   {false, 1.0f, 1440, L"1440P"},
-                    {false, 1.0f, 2160, L"2160P"},   {false, 1.0f, 0, L"3 X ORIGINAL"}};
+                    {false, 1.0f, 2160, L"2160P"},   {false, 1.0f, 0, L"RESOLUTION SCALE"}};
 constexpr int kResN = sizeof kRes / sizeof kRes[0];
 int res_get()
 {
@@ -58,6 +59,77 @@ void res_set(int i)
     g_cfg.render_w = 0;
     g_cfg.render_h = kRes[i].height;
     xd3d::request_render_change();
+}
+
+// WINDOW SIZE (PC SETTINGS > VIDEO): the window's client size, as the picture's height (the width follows from the
+// aspect the game plays at). Entry 0 is the largest size of that aspect the desktop leaves free. The port renders
+// at its own size (RESOLUTION SCALE below): this only decides how big the window is (in fullscreen it is the whole
+// monitor, and the choice applies again when you leave it).
+const int kWindowHeights[] = {0, 480, 720, 768, 900, 1080, 1440, 2160};
+constexpr int kWindowN = sizeof kWindowHeights / sizeof kWindowHeights[0];
+int window_get()
+{
+    if (g_cfg.window_w <= 0 && g_cfg.window_h <= 0) return 0; // the desktop fit
+    if (g_cfg.window_w <= 0)
+        for (int i = 1; i < kWindowN; i++)
+            if (kWindowHeights[i] == g_cfg.window_h) return i;
+    return -1; // --window WxH from the command line or black.ini
+}
+void window_set(int i)
+{
+    g_cfg.window_w = 0;
+    g_cfg.window_h = kWindowHeights[i];
+    host3d::set_window_size(g_cfg.window_w, g_cfg.window_h);
+}
+std::wstring window_text(int i)
+{
+    wchar_t s[32];
+    if (i < 0) {
+        if (g_cfg.window_w > 0 && g_cfg.window_h > 0) {
+            swprintf(s, 32, L"%d X %d", g_cfg.window_w, g_cfg.window_h);
+            return s;
+        }
+        return L"CUSTOM";
+    }
+    if (i == 0) return L"MONITOR";
+    int h = kWindowHeights[i], aw = g_cfg.widescreen ? 16 : 4, ah = g_cfg.widescreen ? 9 : 3;
+    swprintf(s, 32, L"%d X %d", h * aw / ah, h);
+    return s;
+}
+
+// RESOLUTION SCALE: the game's internal resolution, K x the Xbox buffer (640x480, drawn 16:9 in widescreen), used
+// while RESOLUTION is on RESOLUTION SCALE (choosing a scale puts it there). The host render targets follow it and the
+// picture is then shown at the window's size. While RESOLUTION holds a size of its own this shows CUSTOM.
+const float kScales[] = {0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f};
+constexpr int kScaleN = sizeof kScales / sizeof kScales[0];
+int scale_get()
+{
+    if (g_cfg.render_native || g_cfg.render_h > 0) return -1;
+    for (int i = 0; i < kScaleN; i++)
+        if (close_to(g_cfg.scale, kScales[i])) return i;
+    return -1;
+}
+void scale_set(int i)
+{
+    g_cfg.render_native = false;
+    g_cfg.render_w = g_cfg.render_h = 0;
+    g_cfg.scale = kScales[i];
+    xd3d::request_render_change();
+}
+std::wstring scale_text(int i)
+{
+    if (i < 0) return L"CUSTOM";
+    wchar_t s[32];
+    swprintf(s, 32, L"%gX%s", kScales[i], i == 1 ? L" (ORIGINAL)" : L"");
+    return s;
+}
+
+const int kAniso[] = {0, 2, 4, 8, 16};
+int aniso_get()
+{
+    for (int i = 0; i < 5; i++)
+        if (kAniso[i] == g_cfg.aniso) return i;
+    return 0;
 }
 
 // A slider row has the 26 positions of the game's slider clip (Sound Setup's bullet bar): field of view 70-120 in
@@ -91,11 +163,12 @@ struct Row {
     void (*set)(int);
     std::wstring (*text)(int);
     bool slider = false;
+    bool custom = false; // get() may be outside the list (a size from black.ini or the command line): CUSTOM
 };
 
 const Row kRows[] = {
     // VIDEO
-    {"RESOLUTION", kResN, res_get, res_set, [](int i) { return std::wstring(i < 0 ? L"CUSTOM" : kRes[i].text); }},
+    {"RESOLUTION", kResN, res_get, res_set, [](int i) { return std::wstring(i < 0 ? L"CUSTOM" : kRes[i].text); }, false, true},
     {"ANTI-ALIASING", 2, [] { return (int)g_cfg.aa; }, [](int i) { g_cfg.aa = i != 0; }, [](int i) { return on_off(i); }},
     {"FIELD OF VIEW", kSteps, [] { return step_of(g_cfg.fov, 70, 2); },
      [](int i) {
@@ -151,39 +224,92 @@ const Row kRows[] = {
      [](int i) { return std::wstring(i ? L"HOLD" : L"TOGGLE (ORIGINAL)"); }},
     {"CROUCH", 2, [] { return (int)g_cfg.crouch_hold; }, [](int i) { g_cfg.crouch_hold = i != 0; },
      [](int i) { return std::wstring(i ? L"HOLD" : L"PROFILE OPTION"); }},
+    // DISPLAY (after the rows above)
+    {"WEAPON FOV", kSteps, [] { return step_of(g_cfg.viewmodel_fov, 70, 1); }, // 70-95 by 1: the default 85 is a step
+     [](int i) { g_cfg.viewmodel_fov = 70.0f + i; },
+     [](int i) { return number(70.0f + i, L"%.0f") + (i == 0 ? L" (ORIGINAL)" : L""); }, true},
+    {"FPS COUNTER", 2, [] { return (int)g_cfg.fpscounter; }, [](int i) { g_cfg.fpscounter = i != 0; },
+     [](int i) { return on_off(i); }},
+    // AUDIO AND GAME
+    {"MOVIE SUBTITLES", 2, [] { return (int)g_cfg.subtitles; }, [](int i) { g_cfg.subtitles = i != 0; },
+     [](int i) { return on_off(i); }},
+    // VIDEO (after the rows above)
+    {"RESOLUTION SCALE", kScaleN, scale_get, scale_set, scale_text, false, true},
+    {"ANISOTROPIC FILTERING", 5, [] { return aniso_get(); }, [](int i) { g_cfg.aniso = kAniso[i]; },
+     [](int i) { return i ? number((float)kAniso[i], L"%.0fX") : std::wstring(L"OFF"); }},
+    {"WINDOW SIZE", kWindowN, window_get, window_set, window_text, false, true},
 };
 constexpr int kRowN = sizeof kRows / sizeof kRows[0];
 constexpr int kKeyBindings = 15;
-constexpr int kAimMode = 16, kCrouchMode = 17;
+constexpr int kAimMode = 16, kCrouchMode = 17, kWeaponFov = 18, kFpsCounter = 19, kSubtitles = 20;
+constexpr int kScale = 21, kAnisoRow = 22, kWindowRow = 23;
+// Rows past the fixed ones are the mods found in <port>\mods: one ON/OFF line each (mods.h).
+int mod_count() { return (int)mods::list().size(); }
 
 } // namespace
 
 const std::vector<Group> &groups()
 {
     static const std::vector<Group> g = {
-        {"PCVideo", "VIDEO", {0, 1, 2, 3, 4, 5}},
-        {"PCDisplay", "DISPLAY", {6, 7, 8, 9}},
-        {"PCGame", "AUDIO AND GAME", {10, 11, 12}},
-        {"PCControls", "CONTROLS", {13, 14, kAimMode, kCrouchMode, kKeyBindings}},
+        {"PCVideo", "VIDEO", {0, kWindowRow, kScale, 1, kAnisoRow, 5}},
+        {"PCDisplay", "DISPLAY", {6, 7, 8, 9, 3, 4}},                         // + brightness, gamma
+        {"PCGame", "AUDIO AND GAME", {10, 12, kSubtitles, kFpsCounter, 2, kWeaponFov}}, // + both fields of view
+        {"PCControls", "CONTROLS", {13, 14, 11, kAimMode, kCrouchMode, kKeyBindings}},  // + auto-aim
     };
     return g;
 }
 
-int count() { return kRowN; }
-const char *label(int n) { return n >= 0 && n < kRowN ? kRows[n].label : ""; }
+// The MODS page: one row per mod found under <port>\mods (a page holds six rows: mods beyond them are not shown).
+const Group &mods_group()
+{
+    static Group g;
+    g = {"PCMods", "MODS", {}};
+    for (int i = 0; i < mod_count() && i < fevar::kRows; i++) g.rows.push_back(kRowN + i);
+    if (mod_count() > fevar::kRows) {
+        static int told;
+        if (told++ < 1) logf("mods: %d mods installed, %d of them fit the MODS page", mod_count(), fevar::kRows);
+    }
+    return g;
+}
+
+int count() { return kRowN + mod_count(); }
+
+const char *label(int n)
+{
+    if (n >= 0 && n < kRowN) return kRows[n].label;
+    int i = n - kRowN;
+    return i >= 0 && i < mod_count() ? mods::list()[i].title.c_str() : "";
+}
 
 std::wstring value(int n)
 {
-    if (n < 0 || n >= kRowN) return L"";
+    if (n >= kRowN) {
+        int i = n - kRowN;
+        if (i < 0 || i >= mod_count()) return L"";
+        const mods::Mod &m = mods::list()[i];
+        std::wstring v = m.on && !m.blocked ? L"ON" : L"OFF";
+        if (m.blocked) v += L" (LANGUAGE)"; // a mod for another language than the one being played (mods.h)
+        if (m.on != m.at_start) v += L" (RESTART)"; // read at start: the port restarts at the main menu (fe/restart.cpp)
+        return v;
+    }
+    if (n < 0) return L"";
     const Row &r = kRows[n];
     int i = std::min(r.get(), r.choices - 1);
-    if (i < 0 && r.get != res_get) i = 0; // only the render size has a value outside the list (CUSTOM)
+    if (i < 0 && !r.custom) i = 0; // only the rows that can hold a value from outside their list show CUSTOM
     return r.text(i);
 }
 
 void step(int n, int dir)
 {
-    if (n < 0 || n >= kRowN || !dir) return;
+    if (!dir) return;
+    if (n >= kRowN) { // a mod: the marker file in its own folder is the state
+        int i = n - kRowN;
+        if (i < 0 || i >= mod_count()) return;
+        bool on = mods::toggle(i);
+        logf("fe: mod %s -> %s", mods::list()[i].title.c_str(), on ? "ON" : "OFF");
+        return;
+    }
+    if (n < 0) return;
     const Row &r = kRows[n];
     int i = std::min(r.get(), r.choices - 1);
     i = i < 0 ? 0 : (i + (dir > 0 ? 1 : r.choices - 1)) % r.choices;
@@ -194,7 +320,9 @@ void step(int n, int dir)
 
 bool is_slider(int n) { return n >= 0 && n < kRowN && kRows[n].slider; }
 
-bool restart_only(int n) { return n == 6 || n == 7; } // aspect ratio, frame rate: read by the game at boot
+// aspect ratio, frame rate: read by the game at boot; the mods' files too
+bool restart_only(int n) { return n == 6 || n == 7 || n >= kRowN; }
+bool is_frame_rate(int n) { return n == 7; }
 
 const char *link(int n) { return n == kKeyBindings ? "PCBindings" : nullptr; }
 
@@ -218,10 +346,12 @@ void slide(int n, float pos)
 void fill_page(int group)
 {
     const std::vector<Group> &gs = groups();
-    if (group < 0 || group >= (int)gs.size()) return;
-    const std::vector<int> &rows = gs[group].rows;
+    const std::vector<int> *rows = nullptr;
+    if (group >= 0 && group < (int)gs.size()) rows = &gs[group].rows;
+    else if (group == (int)gs.size()) rows = &mods_group().rows; // the MODS page, after the four groups
+    if (!rows) return;
     for (int i = 0; i < fevar::kRows; i++) {
-        int n = i < (int)rows.size() ? rows[i] : -1;
+        int n = i < (int)rows->size() ? (*rows)[i] : -1;
         fe_var_set(fevar::kValue + i, n >= 0 ? value(n) : L"");
     }
 }

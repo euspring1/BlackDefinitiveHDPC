@@ -9,7 +9,7 @@
 //   FEPCAtRoot Back leaves the page (to the pause menu) instead of reporting PCBack
 // A row's list object reports inputs 1-5 as PCRow(row, input, MyMenu.MovedCursor): left / right change a setting,
 // select opens a screen or waits for a key, up / down at the ends scroll the key list (fe/bind_list.cpp).
-// The settings that apply at the next start (aspect ratio, frame rate) are on the main menu's pages only.
+// The aspect ratio, which applies at the next start, is on the main menu's pages only; the frame rate is on both.
 #include "fe/pause_ui.h"
 
 #include "common.h"
@@ -42,9 +42,10 @@ std::vector<pcset::Group> groups()
         pcset::Group h = g;
         h.rows.clear();
         for (int n : g.rows)
-            if (!pcset::restart_only(n)) h.rows.push_back(n);
+            if (!pcset::restart_only(n) || pcset::is_frame_rate(n)) h.rows.push_back(n); // frame rate: (NEXT START)
         if (!h.rows.empty()) out.push_back(h);
     }
+    out.push_back(pcset::mods_group()); // the mods screen (mods.h) is only reachable from here
     return out;
 }
 
@@ -125,6 +126,14 @@ void back()
         go(screen, focus);
     }
     refresh();
+}
+
+bool row_is_value(int i)
+{
+    std::wstring title;
+    std::vector<Row> rs = rows(&title);
+    if (i < 0 || i >= (int)rs.size()) return false;
+    return rs[i].kind == Row::Choice || rs[i].kind == Row::Slider;
 }
 
 void refresh()

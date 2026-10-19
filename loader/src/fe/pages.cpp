@@ -62,6 +62,12 @@ void call(Asm &a, const Path &obj, const std::string &method, const std::vector<
 
 void call_function(Asm &a, const std::string &name) { a.push({Value::I(0), Value::S(name)}).call_function().pop(); }
 
+// The same call with the function's value left on the stack (an expression rather than a statement).
+Push call_value(const std::string &name)
+{
+    return [name](Asm &a) { a.push({Value::I(0), Value::S(name)}).call_function(); };
+}
+
 void set(Asm &a, const Path &obj, const std::string &member, const Push &value)
 {
     at(obj)(a);
@@ -243,20 +249,13 @@ void own_classes_script(Asm &a, const Classes &classes, const std::string &tag)
     });
 }
 
-void emit_heal(Asm &f, const std::string &row_var, const Classes &classes, const std::string &tag)
+// The heal itself: the page's own classes back, the menu again where it is gone, and the page's own Prepare.
+void emit_heal_body(Asm &f, const Classes &classes, const std::string &tag)
 {
     auto gone = [&f](const Path &p) {
         at(p)(f);
         f.push(Value::U()).equals2();
     };
-    at({"pcDead"})(f);
-    size_t fine0 = f.branch(0x9D);
-    gone({"MyMenu"});
-    size_t heal = f.branch(0x9D);
-    gone({row_var});
-    f.logical_not();
-    size_t fine1 = f.branch(0x9D);
-    f.land(heal);
     dbg_log(f, {S("H" + tag + "#"), at({"pcInst"}), S(" own="), defined({own_var("BkMenuList")}), S(" g="), defined({"_global", "BkMenuList"}),
                 S(" menu="), defined({"MyMenu"})});
     for (const std::string &cls : classes) { // its own classes back
@@ -278,16 +277,43 @@ void emit_heal(Asm &f, const std::string &row_var, const Classes &classes, const
     f.land(has_menu);
     call_function(f, "PagePrepare");
     trigger(f, "PCHealed", {});
-    f.land(fine0);
-    f.land(fine1);
     f.land(fine2);
 }
 
-void heal_update(Asm &a, const std::string &row_var, const Classes &classes, const std::string &tag)
+void emit_heal(Asm &f, const std::string &row_var, const Classes &classes, const std::string &tag)
 {
-    a.function2("Update", [row_var, classes, tag](Asm &f) {
+    auto gone = [&f](const Path &p) {
+        at(p)(f);
+        f.push(Value::U()).equals2();
+    };
+    at({"pcDead"})(f);
+    size_t fine0 = f.branch(0x9D);
+    gone({"MyMenu"});
+    size_t heal = f.branch(0x9D);
+    gone({row_var});
+    f.logical_not();
+    size_t fine1 = f.branch(0x9D);
+    f.land(heal);
+    emit_heal_body(f, classes, tag);
+    f.land(fine0);
+    f.land(fine1);
+}
+
+// A page of the game's own: the port has no row of its own to test and its Prepare is not the port's to run again (the
+// game's own pages build their rows once), so a page of the game's own is healed by the class definitions alone.
+
+// The pointer in the pages the port builds: defined below (the classes and the tools the pages use), called by the
+// Update of a page whose rows should follow the cursor. ids: the setting each row is (-1: none), so the port can
+// change a value row itself (the game's widgets only take a direction that is held, which a pointer cannot make).
+void hover_block(Asm &f, const std::vector<std::string> &rows, const std::vector<int> &ids);
+
+void heal_update(Asm &a, const std::string &row_var, const Classes &classes, const std::string &tag,
+                 const std::vector<std::string> &hover = {})
+{
+    a.function2("Update", [row_var, classes, tag, hover](Asm &f) {
         emit_heal(f, row_var, classes, tag);
         call_function(f, "Update0");
+        hover_block(f, hover, {});
         dbg_flush(f);
     });
 }
@@ -313,7 +339,7 @@ std::vector<RowSpec> group_rows(const pcset::Group &g, bool pause)
 {
     std::vector<RowSpec> out;
     for (int n : g.rows) {
-        if (pause && pcset::restart_only(n)) continue; // applies at the next start: main menu only
+        if (pause && pcset::restart_only(n) && !pcset::is_frame_rate(n)) continue; // applies at the next start: main menu only
         std::string value = "&PC_V" + std::to_string(fevar::kValue + (int)out.size());
         if (const char *page = pcset::link(n)) out.push_back({RowSpec::Link, n, pcset::label(n), "", pause ? ingame(page) : page});
         else out.push_back({pcset::is_slider(n) ? RowSpec::Slider : RowSpec::Choice, n, pcset::label(n), value, ""});
@@ -346,7 +372,600 @@ void define_list_class(Asm &a, const std::string &name, const std::function<void
     }
 }
 
+// The packing the port's own rows report (hover_block / fe/calls.cpp pc_hover): kPortBase + (id + 1) * kPackId +
+// middle * kPackW + width. kPortBase keeps it clear of the game's own rows (hover_walk: the middle itself); kPackW
+// holds the middle and the width (both under two thousand stage pixels), and kPackId a whole (middle, width) pair.
+constexpr int kPortBase = 0x10000000, kPackW = 2048, kPackId = kPackW * kPackW;
+
 void input_id(Asm &f) { f.push(Value::R(2)).push(Value::S("externObject")).get_member().push(Value::S("FEInputId")).get_member(); }
+
+// The pointer in the menus the port builds. The game's own menus are the pad's only, so input/bindings.cpp feeds each
+// of the port's pages the pointer's point through externObject.FEPointerX / FEPointerY (the picture's pixels 0-640 by
+// 0-480; both -1 while the pointer is not the input used last) and the page puts the focus on the row the pointer is
+// on, so the highlight follows the cursor. The pages read the port's own copies of those two (FEPCPointerX / Y): the
+// game's own front-end code writes over FEPointerX/Y in the middle of its update (it puts -1 there when its own
+// pointer is not the input in use), so a page reading them could see the cursor gone where the port had just put it --
+// and the row under the cursor was then unknown and a click on it did nothing, now and then, by timing alone. A row's
+// line is its _y plus every ancestor's up to the root (the pages neither rotate nor scale), which is the page's own
+// pixels: the pause page's sliding panel and every page's own layout need nothing from the port. The row the pointer
+// is on is the last one whose line is above it (a row owns the band down to the next row's line, so no row is out of
+// reach), nothing above the first row. A row the page hid (the pause page shows a few at a time) holds nothing. The
+// focus is set once per change, so the game's focus animation and sound play once, and the row is reported as
+// PCHover(row) for the tests.
+void hover_block(Asm &f, const std::vector<std::string> &rows, const std::vector<int> &ids)
+{
+    if (rows.empty()) return;
+    auto var = [](const char *name) { return [name](Asm &g) { at({name})(g); }; };
+    auto let = [](Asm &g, const char *name, const Push &value) {
+        g.push(Value::S(name));
+        value(g);
+        g.set_var();
+    };
+    auto pointer = [](const char *name) {
+        return [name](Asm &g) { at({"_global", "externObject", name})(g); };
+    };
+    auto clip = [&rows](Asm &g, size_t i) {
+        at({rows[i]})(g);
+        g.push(Value::S("movieClip")).get_member();
+    };
+    // the row's place in the page's own pixels: its <member> plus each ancestor's, up to the root (_y for the row's
+    // line, _x for the pointer's side of it)
+    auto axis_of = [&](size_t i, const std::string &member) {
+        return [&, i, member](Asm &g) {
+            let(g, "pcWalk", [&](Asm &h) { clip(h, i); });
+            let(g, "pcSum", I(0));
+            for (int level = 0; level < 8; level++) {
+                var("pcWalk")(g);
+                g.push(Value::U()).equals2(); // the cursor ran off the top: the sum is done
+                size_t end1 = g.branch(0x9D);
+                var("pcWalk")(g);
+                at({"_root"})(g);
+                g.equals2(); // the root's own place is the page's origin
+                size_t end2 = g.branch(0x9D);
+                g.push(Value::S("pcSum"));
+                var("pcSum")(g);
+                var("pcWalk")(g);
+                g.push(Value::S(member)).get_member();
+                g.add2();
+                g.set_var();
+                g.push(Value::S("pcWalk"));
+                var("pcWalk")(g);
+                g.push(Value::S("_parent")).get_member();
+                g.set_var();
+                g.land(end2);
+                g.land(end1);
+            }
+            var("pcSum")(g);
+        };
+    };
+    auto line_of = [&](size_t i) { return axis_of(i, "_y"); };
+    // The port bumps externObject.FEPCPage at every page change (input/bindings.cpp). A page the player comes back to
+    // (back, then the row again) has the same row under the cursor, and this page reports a row only when it changes:
+    // without the bump it would answer "the same row as last time" and never say a word, while the port, which drops
+    // the row it kept at every page change, waits for a report that never comes -- the click lands on no row at all.
+    pointer("FEPCPage")(f);
+    var("pcGen")(f);
+    f.equals2();
+    f.logical_not();
+    size_t new_visit = f.branch(0x9D);
+    let(f, "pcGen", pointer("FEPCPage"));
+    let(f, "pcHover", I(-1)); // the row reported on the visit that just went: report the one under the cursor again
+    f.land(new_visit);
+    let(f, "pcLine", I(-9999)); // the lowest row line above the pointer the search has seen
+    let(f, "pcHalf", I(0)); // half the gap between two rows: the bands sit on the lines, not under them
+    let(f, "pcOver", I(-1));
+    if (rows.size() > 1) {
+        f.push(Value::S("pcHalf"));
+        line_of(1)(f);
+        line_of(0)(f);
+        f.op(0x0B); // the gap between the first two rows
+        f.push(Value::I(2)).op(0x0D);
+        f.set_var();
+    }
+    for (size_t i = 0; i < rows.size(); i++) {
+        defined({rows[i]})(f); // a button this page does not carry (two pages may share one list): skip it
+        f.logical_not();
+        size_t missing = f.branch(0x9D);
+        clip(f, i);
+        f.push(Value::S("_visible")).get_member();
+        f.push(Value::I(0)).equals2(); // only a row the page itself hid: a missing value counts as shown
+        size_t hidden = f.branch(0x9D);
+        f.push(Value::S("pcRow"));
+        line_of(i)(f);
+        f.set_var();
+        var("pcRow")(f);
+        pointer("FEPCPointerY")(f);
+        var("pcHalf")(f);
+        f.add2(); // the pointer's line, the band's bottom on it
+        f.op(0x67); // below the pointer's line: not the row it is on
+        size_t below = f.branch(0x9D);
+        pointer("FEPCPointerY")(f);
+        var("pcRow")(f);
+        var("pcHalf")(f);
+        f.add2();
+        f.op(0x67); // more than half a gap below the row's line: not the row it is on either
+        size_t belowband = f.branch(0x9D);
+        var("pcRow")(f);
+        var("pcLine")(f);
+        f.op(0x67); // an earlier row already owns this band: the best line stays
+        f.logical_not();
+        size_t lower = f.branch(0x9D);
+        f.push(Value::S("pcLine"));
+        var("pcRow")(f);
+        f.set_var();
+        f.push(Value::S("pcOver"));
+        f.push(Value::I((int)i));
+        f.set_var();
+        f.land(lower);
+        f.land(below);
+        f.land(belowband);
+        f.land(hidden);
+        f.land(missing);
+    }
+    var("pcOver")(f); // the row it put the focus on last: nothing to do while it is the same one
+    var("pcHover")(f);
+    f.equals2();
+    size_t same = f.branch(0x9D);
+    let(f, "pcHover", var("pcOver")); // -1 (the pointer is elsewhere) matches no row: the focus stays where it was
+    var("pcOver")(f);
+    f.push(Value::I(-1)).op(0x67).logical_not(); // pcOver <= -1: the pointer is on no row
+    size_t norow = f.branch(0x9D);
+    for (size_t i = 0; i < rows.size(); i++) {
+        var("pcOver")(f);
+        f.push(Value::I((int)i)).equals2().logical_not();
+        size_t other = f.branch(0x9D);
+        call(f, {"MyMenu"}, "SetFocusButton", {at({rows[i]})});
+        at({"_global", "externObject", "FEFunctionTrigger"})(f); // a call is waiting: next update
+        f.push(Value::I(1)).equals2();
+        size_t busy = f.branch(0x9D);
+        // The row, whether it carries a value list, and the setting it is with the row's middle as the packed third
+        // parameter (fe/calls.cpp pc_hover): kPortBase + (id + 1) * kPackId + the middle * kPackW + the width. The
+        // port asks a click's side against the middle when the button goes down (input/bindings.cpp menu_row), and a
+        // slider takes the pointer's place along the row, which needs the row's width as well. kPortBase tells this
+        // apart from a row of the game's own (fe/pages.cpp hover_walk), whose code is the middle itself (id -1).
+        let(f, "pcCode", I(kPortBase + ((i < ids.size() ? ids[i] : -1) + 1) * kPackId));
+        f.push(Value::S("pcCode"));
+        var("pcCode")(f);
+        axis_of(i, "_x")(f); // the row's left
+        clip(f, i);
+        f.push(Value::S("_width")).get_member();
+        f.push(Value::I(2)).op(0x0D);
+        f.add2(); // the row's left plus half its width: its middle
+        f.push(Value::I(kPackW)).op(0x0C); // the middle, in the id's slot
+        clip(f, i);
+        f.push(Value::S("_width")).get_member();
+        f.add2(); // the row's width, below the middle
+        f.add2(); // the setting and the middle, as pc_hover unpacks them
+        f.set_var();
+        trigger(f, "PCHover", {I((int)i), defined({rows[i], "mChoiceList"}), var("pcCode")});
+        f.land(busy);
+        f.land(other);
+    }
+    size_t done = f.branch(0x99); // the pointer is on a row: it reported itself above
+    f.land(norow);
+    trigger(f, "PCHover", {I(-1), I(0), I(0)}); // off the rows (no row, no value, no middle): the port drops its row
+    f.land(done);
+    f.land(same);
+}
+
+// The walk's two helpers, defined once per page (game_page) rather than expanded at every step. Both keep their state
+// and take their arguments on _global (see hover_walk): the place of a clip, and one step of the ring. Expanded inline
+// at each of the walk's 64 steps the place alone was about two thirds of a page's ActionScript -- 260 KB a page, which
+// the game could not allocate for the rebuilt front end (the disc error screen), against 8 KB for both as functions.
+//
+// The place of a clip on the page in pixels: its <member> plus each ancestor's, up to the root. _global.pcArgClip is
+// the clip, _global.pcArgMem the member (_y for a row's line, _x for its middle); the sum is returned.
+void pc_place(Asm &f)
+{
+    auto var = [](const char *name) { return [name](Asm &g) { at({"_global", name})(g); }; };
+    auto let = [](Asm &g, const char *name, const Push &value) { set(g, {"_global"}, name, value); };
+    let(f, "pcWalk", var("pcArgClip"));
+    let(f, "pcSum", I(0));
+    for (int level = 0; level < 8; level++) {
+        var("pcWalk")(f);
+        f.push(Value::U()).equals2(); // the walk ran off the top: the sum is done
+        size_t end1 = f.branch(0x9D);
+        var("pcWalk")(f);
+        at({"_root"})(f);
+        f.equals2(); // the root's own place is the page's origin
+        size_t end2 = f.branch(0x9D);
+        let(f, "pcSum", [&](Asm &g) {
+            var("pcSum")(g);
+            var("pcWalk")(g);
+            var("pcArgMem")(g);
+            g.get_member();
+            g.add2();
+        });
+        let(f, "pcWalk", [&](Asm &g) { var("pcWalk")(g); g.push(Value::S("_parent")).get_member(); });
+        f.land(end2);
+        f.land(end1);
+    }
+    var("pcSum")(f);
+    f.ret();
+}
+
+// One button of the ring: its clip's line, the gap between the first two rows (the band on a row's line, kept once),
+// and whether it is the row nearest the cursor so far. The link to follow round the ring is _global.pcLink
+// (buttonDown or buttonUp) and the button walked _global.pcW. When the ring runs out, closes on the first button, or
+// the button has no clip to give a line, this sets _global.pcStop: the caller's steps do nothing further.
+void pc_step(Asm &f, bool grid)
+{
+    auto var = [](const char *name) { return [name](Asm &g) { at({"_global", name})(g); }; };
+    auto let = [](Asm &g, const char *name, const Push &value) { set(g, {"_global"}, name, value); };
+    auto ptr = [](const char *name) {
+        return [name](Asm &g) { at({"_global", "externObject", name})(g); };
+    };
+    let(f, "pcC", [&](Asm &g) { var("pcW")(g); g.push(Value::S("movieClip")).get_member(); });
+    var("pcC")(f);
+    f.push(Value::U()).equals2(); // a button without a clip has no place to give
+    size_t no_clip = f.branch(0x9D);
+    let(f, "pcArgClip", var("pcC"));
+    let(f, "pcArgMem", S("_y"));
+    let(f, "pcRaw", call_value("pcPlace")); // the clip's registration point: the top of a row of text or of a key
+    // half the gap between the first two rows the walk saw (measured on the tops: the same gap as on the middles)
+    var("pcWN")(f);
+    f.push(Value::I(0)).op(0x67); // a line is already there
+    f.logical_not();
+    size_t no_prev = f.branch(0x9D);
+    var("pcHalf")(f);
+    f.push(Value::I(0)).equals2(); // unset: this pair gives the spacing
+    f.logical_not();
+    size_t half_set = f.branch(0x9D);
+    let(f, "pcGap", [&](Asm &g) { var("pcRaw")(g); var("pcPrev")(g); g.op(0x0B); });
+    var("pcGap")(f);
+    f.push(Value::I(0)).op(0x67);
+    size_t pos = f.branch(0x9D);
+    let(f, "pcGap", [&](Asm &g) { var("pcPrev")(g); var("pcRaw")(g); g.op(0x0B); });
+    f.land(pos);
+    let(f, "pcHalf", [&](Asm &g) { var("pcGap")(g); g.push(Value::I(2)).op(0x0D); });
+    f.land(half_set);
+    f.land(no_prev);
+    // The row's line: the clip's own middle. A row of text registers at its top, so the bare top put the band on the
+    // upper half of the row and the pointer on the lower half found no row at all (the picture menu's BRILHO bar, whose
+    // slider hangs below its label). It is the clip's own height and not the row spacing on purpose: a spacing measured
+    // from the walk's first two buttons changes when the focus (and so the walk's start) changes, which shifted every
+    // line by a few units and made two rows at nearly the same distance flip the highlight from update to update.
+    let(f, "pcLine", [&](Asm &g) {
+        var("pcRaw")(g);
+        var("pcC")(g);
+        g.push(Value::S("_height")).get_member();
+        g.push(Value::I(2)).op(0x0D);
+        g.add2();
+    });
+    // The row nearest the cursor so far. On a one-column page: the distance between the row's line and the pointer's,
+    // squared. On a grid, the same with the middle's distance as the tie-break (scaled by 2^20, far more than the whole
+    // stage's width squared, so a line difference always outweighs it): every key of a line would otherwise tie, the
+    // first one the ring walked would win, and the cursor only ever reached that column (1, A, K, U on the keyboard).
+    let(f, "pcD", [&](Asm &g) { var("pcLine")(g); ptr("FEPCPointerY")(g); g.op(0x0B); });
+    let(f, "pcD2", [&](Asm &g) { var("pcD")(g); var("pcD")(g); g.op(0x0C); });
+    if (grid) {
+        let(f, "pcArgClip", var("pcC"));
+        let(f, "pcArgMem", S("_x"));
+        let(f, "pcMid", [&](Asm &g) {
+            call_value("pcPlace")(g);
+            var("pcC")(g);
+            g.push(Value::S("_width")).get_member();
+            g.push(Value::I(2)).op(0x0D);
+            g.add2(); // the button's left plus half its width: its middle
+        });
+        let(f, "pcDX", [&](Asm &g) { var("pcMid")(g); ptr("FEPCPointerX")(g); g.op(0x0B); });
+        let(f, "pcKey", [&](Asm &g) {
+            var("pcD2")(g);
+            g.push(Value::I(1048576)).op(0x0C);
+            var("pcDX")(g);
+            var("pcDX")(g);
+            g.op(0x0C);
+            g.add2();
+        });
+    } else {
+        let(f, "pcKey", var("pcD2"));
+    }
+    var("pcBest")(f);
+    f.push(Value::U()).equals2(); // nothing kept yet: this row
+    size_t take = f.branch(0x9D);
+    var("pcBestKey")(f);
+    var("pcKey")(f);
+    f.op(0x67); // the row kept is further: this row
+    size_t closer = f.branch(0x9D);
+    size_t keep = f.branch(0x99); // the row kept stays
+    f.land(take);
+    f.land(closer);
+    let(f, "pcBest", var("pcW"));
+    let(f, "pcBestKey", var("pcKey"));
+    let(f, "pcBestD2", var("pcD2"));
+    let(f, "pcBestOwner", var("pcOwner"));
+    f.land(keep);
+    let(f, "pcPrev", var("pcRaw"));
+    let(f, "pcWN", [&](Asm &g) { var("pcWN")(g); g.push(Value::I(1)).add2(); });
+    f.land(no_clip);
+    // the next button of the ring, and the two ways the walk ends
+    let(f, "pcNext", [&](Asm &g) { var("pcW")(g); var("pcLink")(g); g.get_member(); });
+    var("pcNext")(f);
+    f.push(Value::U()).equals2();
+    size_t out = f.branch(0x9D);
+    var("pcNext")(f);
+    var("pcStart")(f);
+    f.equals2(); // back at the button the walk began with: every row seen
+    size_t closed = f.branch(0x9D);
+    let(f, "pcDone", I(1));
+    let(f, "pcW", var("pcNext"));
+    size_t walked = f.branch(0x99);
+    f.land(out);
+    f.land(closed);
+    let(f, "pcStop", I(1));
+    f.land(walked);
+}
+
+// The pointer on a page of the game's own (game_page below). Such a page carries no list of the port's own rows: the
+// game's menu object (MyMenu; Main.ButtonSelector is the small set a page's overlay has, walked only when MyMenu found
+// no row) keeps its buttons in a ring,
+// the focused one at its mFocusButton, each button's next at its buttonDown and its previous at its buttonUp link. The
+// walk starts at the focused button and follows the ring both ways, keeping the button whose line on the page is
+// nearest the cursor and no further than half a row (off the rows the focus stays where it was). So the highlight
+// follows the cursor without the port knowing a single name of the page's own rows, and the ring's own order (the
+// game's top to bottom one) gives the row spacing. The row is reported as any page of the port's reports its rows
+// (fe/calls.cpp pc_hover) with the setting -1: a click on one of the game's own value rows is one step of the game's
+// own widget (input 3 or 4) instead of a select, which would confirm the row and leave the page.
+void hover_walk(Asm &f, bool grid)
+{
+    // The walk's own state lives on _global: a name only SetVariable'd in a page of the game's own (no DefineLocal2
+    // from the port's own page script) is not what a later GetVariable finds -- the page's Update runs with a scope
+    // chain that does not carry it (the debug log read best=true, w=false, h=undefined for the same update). Members
+    // of _global are the port's proven way to keep values across updates (pcEn/pcEf above).
+    auto var = [](const char *name) { return [name](Asm &g) { at({"_global", name})(g); }; };
+    auto let = [](Asm &g, const char *name, const Push &value) { set(g, {"_global"}, name, value); };
+    auto ptr = [](const char *name) {
+        return [name](Asm &g) { at({"_global", "externObject", name})(g); };
+    };
+    auto undef = [](Asm &g) { g.push(Value::U()); };
+    let(f, "pcWN", I(0)); // rows the walk saw, then half the gap between the first two (the band on a row's line)
+    let(f, "pcPrev", I(0));
+    let(f, "pcHalf", I(0));
+    let(f, "pcDone", I(0)); // the ring came back to the first button: the other way round has nothing new
+    let(f, "pcStop", I(0)); // a step found the ring ended: that direction's remaining steps do nothing
+    let(f, "pcBest", undef); // the button nearest the cursor, its distance key and the menu it belongs to
+    let(f, "pcBestD2", I(0));
+    let(f, "pcBestKey", I(0));
+    let(f, "pcBestOwner", undef);
+    let(f, "pcCode", I(-2));
+    let(f, "pcArgMem", S("_y")); // pc_place's member: the rows' lines are what this walk is after
+    const Path menus[2] = {{"MyMenu"}, {"Main", "ButtonSelector"}};
+    // The walk's phases, each a chain of pc_step: down / up walk a column (the menu's own top-to-bottom order gives
+    // the spacing). On a grid (the profile keyboard) two more phases walk a row with buttonLeft / buttonRight -- its
+    // ring links a column with buttonDown/buttonUp and a row with buttonLeft/buttonRight, so without them only the
+    // focused column was ever reachable. The last pair starts at the end of the row the horizontal pass found: the
+    // keyboard's mode buttons (FEITO, ACENTOS, ...) hang off that column and not off the rows, so after a letter had
+    // the focus they were not reachable and a click on FEITO typed a letter. Every other page keeps the two phases it
+    // has always had: more phases there reach rows the page's own ring does not order top to bottom, and its highlight
+    // could flip between two of them from one update to the next.
+    const char *links[6] = {"buttonDown", "buttonUp", "buttonLeft", "buttonRight", "buttonDown", "buttonUp"};    for (size_t mi = 0; mi < 2; mi++) {
+        const Path &menu = menus[mi];
+        // The page's own list (MyMenu) is the page's menu; the small set an overlay carries (Main.ButtonSelector) is
+        // walked only when that found no row at all. Taking the nearest of both at once had the walk flicker between
+        // a row of the page and one of the overlay from one update to the next, so a click on a value row carried the
+        // direction one update and not the next -- and with no direction the click selects the row and leaves the page.
+        size_t have_row = 0;
+        if (mi) {
+            var("pcBest")(f);
+            f.push(Value::U()).equals2();
+            f.logical_not();
+            have_row = f.branch(0x9D);
+        }
+        at(menu)(f);
+        f.push(Value::U()).equals2();
+        size_t no_menu = f.branch(0x9D);
+        let(f, "pcOwner", at(menu));
+        let(f, "pcW", [&](Asm &g) { at(menu)(g); g.push(Value::S("mFocusButton")).get_member(); });
+        var("pcW")(f);
+        f.push(Value::U()).equals2();
+        size_t no_focus = f.branch(0x9D);
+        let(f, "pcFocus", var("pcW")); // every direction starts at the focused button, not where the last one stopped
+        for (int dir = 0; dir < (grid ? 6 : 2); dir++) {
+            if (dir == 2) {
+                // The two horizontal chains start where the vertical ones ended: the row the pointer is on. From a key
+                // of that row buttonLeft / buttonRight reach the whole row; started from the focused button (a key of
+                // some other column) they would only reach that column, the row under the cursor would come out as
+                // the crossing cell and the highlight would flip between two cells from one update to the next.
+                var("pcBest")(f);
+                f.push(Value::U()).equals2();
+                size_t no_best = f.branch(0x9D);
+                let(f, "pcFocus", var("pcBest"));
+                f.land(no_best);
+            }
+            if (dir == 3) let(f, "pcLeft", var("pcW")); // the left end of that row, before walking it to the right
+            if (dir == 4) {
+                let(f, "pcRight", var("pcW")); // the right end, where the horizontal walk to the right ran out
+                let(f, "pcFocus", var("pcLeft"));
+            }
+            // each direction is a walk of its own: its own end, its own start, and its own rows for the spacing the
+            // band on a row's line is taken from (pc_step), so a direction that finds a single row cannot pair it with
+            // the last row of the direction before
+            let(f, "pcStop", I(0));
+            let(f, "pcDone", I(0));
+            let(f, "pcWN", I(0));
+            let(f, "pcPrev", I(0));
+            let(f, "pcW", var("pcFocus"));
+            let(f, "pcStart", var("pcW"));
+            let(f, "pcLink", S(links[dir])); // the link pc_step follows round the ring this way
+            for (int step = 0; step < 16; step++) {
+                var("pcStop")(f);
+                f.push(Value::I(0)).equals2();
+                f.logical_not();
+                size_t out = f.branch(0x9D); // the ring ran out or closed: the rest of the steps do nothing
+                call_function(f, "pcStep");
+                f.land(out);
+            }
+        }
+        f.land(no_focus);
+        f.land(no_menu);
+        if (mi) f.land(have_row);
+    }
+    // half a row either side of the cursor's line (a page whose ring had a single row keeps a sane band)
+    var("pcHalf")(f);
+    f.push(Value::I(0)).equals2();
+    f.logical_not();
+    size_t has_half = f.branch(0x9D);
+    set(f, {"_global"}, "pcHalf", I(12));
+    f.land(has_half);
+    // off the rows (the nearest one is further than half a row away): the pointer is on no row
+    var("pcBest")(f);
+    f.push(Value::U()).equals2();
+    size_t none = f.branch(0x9D);
+    var("pcBestD2")(f);
+    var("pcHalf")(f);
+    var("pcHalf")(f);
+    f.op(0x0C);
+    f.op(0x67); // the row kept is further than the band
+    f.logical_not();
+    size_t inband = f.branch(0x9D);
+    set(f, {"_global"}, "pcBest", undefined());
+    f.land(inband);
+    f.land(none);
+    // A new visit to the page. The port bumps externObject.FEPCPage at every page change, and the row the port was
+    // told about belonged to the page that just went. The walk's own state lives on _global, which outlives the page,
+    // so without this the same row under the cursor on the way back (back, then the row again) would never be
+    // reported: the port drops the row it kept at the page change and waits for a report that never comes, and every
+    // click on that row lands on no row at all.
+    ptr("FEPCPage")(f);
+    var("pcGen")(f);
+    f.equals2();
+    f.logical_not();
+    size_t new_page = f.branch(0x9D);
+    set(f, {"_global"}, "pcGen", ptr("FEPCPage"));
+    set(f, {"_global"}, "pcLast", S(""));
+    f.land(new_page);
+    // The row under the cursor. The game's own highlight takes the focus when the row changes (so its reveal and its
+    // sound play once) and the port hears about the row then too: the row (or none), whether it carries a value and
+    // the row's middle packed as (id + 1) * 4096 + middle, which the port asks a click's side against when the button
+    // goes down (input/bindings.cpp menu_row). A row of the game's own has no setting of the port's (id -1), so its
+    // code is the middle itself.
+    let(f, "pcName", S(""));
+    var("pcBest")(f);
+    f.push(Value::U()).equals2();
+    size_t no_row = f.branch(0x9D);
+    let(f, "pcC", [&](Asm &g) { var("pcBest")(g); g.push(Value::S("movieClip")).get_member(); });
+    let(f, "pcName", [&](Asm &g) { var("pcC")(g); g.push(Value::S("_name")).get_member(); });
+    f.land(no_row);
+    var("pcName")(f);
+    var("pcLast")(f);
+    f.equals2();
+    size_t same = f.branch(0x9D); // the same row (or still no row): the highlight and the port's row stay as they are
+    set(f, {"_global"}, "pcLast", var("pcName"));
+    var("pcBest")(f);
+    f.push(Value::U()).equals2();
+    size_t no_focus = f.branch(0x9D);
+    var("pcBest")(f);      // the button the menu is to focus: SetFocusButton wants the menu button object itself
+    f.push(Value::I(1));   // (BkMenuButton, the one that carries buttonDown/buttonUp/mChoiceList), not its clip --
+    var("pcBestOwner")(f); // with the clip the game's own ring of links came apart and the walk picked a different
+    f.push(Value::S("SetFocusButton")).call_method().pop(); // row every other update
+    let(f, "pcArgClip", var("pcC")); // pc_place wants the clip and the member: the row's left
+    let(f, "pcArgMem", S("_x"));
+    let(f, "pcCode", [&](Asm &g) {
+        call_value("pcPlace")(g);
+        var("pcC")(g);
+        g.push(Value::S("_width")).get_member();
+        g.push(Value::I(2)).op(0x0D);
+        g.add2(); // the row's left plus half its width: its middle
+    });
+    trigger(f, "PCHover", {I(0),
+                           [&](Asm &g) {
+                               defined({"pcBest", "mChoiceList"})(g);
+                               defined({"pcC", "mChoiceList"})(g);
+                               g.op(0x11); // or
+                           },
+                           var("pcCode")});
+    size_t reported = f.branch(0x99);
+    f.land(no_focus);
+    trigger(f, "PCHover", {I(-1), I(0), I(0)}); // off the rows: the port drops the row it kept for a click
+    f.land(reported);
+    f.land(same);
+    // tests: what the walk saw this update (a page of the game's own has no list of names to check it against)
+    dbg_log(f, {S("#"), var("pcName"), S("|last="), var("pcLast"), S("|rows="), var("pcWN"), S("|half="),
+                var("pcHalf"), S("|d2="), var("pcBestD2"), S("|line="), var("pcLine"), S("|w="),
+                defined({"pcW"}), S("|wn="), at({"pcW", "_name"}), S("|dn="), defined({"pcW", "buttonDown"}),
+                S("|un="), defined({"pcW", "buttonUp"}), S("|cn="), at({"pcC", "_name"}), S("|t="),
+                ptr("FEPCPointerY"), S("|x="), ptr("FEPCPointerX")});
+    dbg_log(f, {S("|mclB="), defined({"pcBest", "mChoiceList"}), S("|mclC="), defined({"pcC", "mChoiceList"}),
+                S("|bn="), at({"pcBest", "_name"}), S("|fy="), ptr("FEPointerY")});
+    // Nothing of a page may stay in _global once the page (or its container) goes -- the rule the port's own pages
+    // follow, and the one the walk broke: its state has to live on _global (the page's own scope does not carry it from
+    // one update to the next), and that state holds the page's own button, menu and clip objects. Left there they kept
+    // the objects alive after FEMain.bin was unloaded at a mission start, and the front end crashed on the next load
+    // (`00019f97`, in the refcounted object's destroy, right when the title menu came back after QUIT in the pause
+    // menu: the user's "quando eu ... saio da missão para o menu o jogo fecha"). Only numbers and strings survive the
+    // update now (the last reported row's name, the page number and the walk's tests); every object reference goes.
+    for (const char *name : {"pcBest", "pcOwner", "pcBestOwner", "pcW", "pcC", "pcArgClip", "pcWalk", "pcNext",
+                             "pcStart", "pcFocus", "pcLeft", "pcRight"})
+        set(f, {"_global"}, name, undefined());
+}
+
+// A page of the game's own: no row of the port's is added, so the page's own Prepare, Release and Destruct are left
+// alone; only its Update gains the walk above, which gives the row under the cursor the focus.
+void game_page(Movie &mv, const std::string &name)
+{
+    // The profile keyboard is the one page of a grid: keys in rows, with the ring linking a row's keys left to right and
+    // a column top to bottom. It gets the wider walk (hover_walk's last four phases and the middle's tie-break).
+    const bool grid = name == "virtualkeyboard";
+    // The page keeps its classes and its Destruct puts them back, exactly as on the pages the port builds: the page's
+    // own Destruct deletes _global.BkMenuList, and the page after it (or this one entered again) would then have no
+    // classes to make its menu from. Before the assembler opens: this edits the movie.
+    Classes classes;
+    bool own = false;
+    try {
+        classes = own_classes_prepare(mv);
+        own = true;
+    } catch (const Error &e) {
+        logf("fe: %s keeps its own classes: %s", name.c_str(), e.what());
+    }
+    uint32_t script = mv.main_script();
+    mv.rename_function(script, "Update", "Update0");
+    Asm a(mv);
+    if (own) own_classes_script(a, classes, "gp");
+    set(a, {"_global"}, "pcLast", S("")); // the row the walk put the focus on last (hover_walk reads it)
+    if (fe_debug()) { // the walk's log needs the port's queue (own_classes_script sets these for its own pages)
+        set(a, {"_global"}, "pcEn", I(0));
+        set(a, {"_global"}, "pcEf", I(0));
+    }
+    // The walk's helpers, defined once a page: expanded at every step the place alone was two thirds of a page's
+    // ActionScript (260 KB a page, which the game could not allocate for the rebuilt front end).
+    a.function2("pcPlace", pc_place);
+    a.function2("pcStep", [grid](Asm &f) { pc_step(f, grid); });
+    a.function2("Update", [grid](Asm &f) {
+        call_function(f, "Update0");
+        hover_walk(f, grid);
+        dbg_flush(f);
+    });
+    mv.append_control(mv.main, 0, mv.do_action(a.finish()));
+}
+
+// The game's own pages the walk runs on, of one container: every name that is there is patched in place (a movie
+// without an Update, or with one the port already changed, is left alone).
+bool game_pages(Container &c, std::initializer_list<const char *> names)
+{
+    bool any = false;
+    if (fe_debug()) { // tests: which movies the front end really has (BLACK_FE_DEBUG)
+        std::string all;
+        for (const std::string &n : c.order) all += n + " ";
+        logf("fe: movies: %s", all.c_str());
+    }
+    for (const char *name : names) {
+        auto it = c.movies.find(name);
+        if (it == c.movies.end()) {
+            logf("fe: the front end has no movie %s", name);
+            continue;
+        }
+        try {
+            Movie mv(it->second);
+            game_page(mv, name);
+            it->second = mv.build();
+            any = true;
+            logf("fe: the pointer is on the page %s", name);
+        } catch (const Error &e) {
+            logf("fe: %s left alone: %s", name, e.what());
+        }
+    }
+    return any;
+}
 
 // KeyList (the KEY BINDINGS page): every input goes to the port as PCBind(mId, FEInputId, MyMenu.MovedCursor)
 void define_key_list(Asm &a)
@@ -390,6 +1009,11 @@ void page_script(Movie &mv, const PageScript &p)
         a.push(Value::S(row_var(i))).define_local2();
         a.push(Value::S(list_var(i))).define_local2();
     }
+    std::vector<std::string> hover;
+    std::vector<int> ids;
+    for (size_t i = 0; i < k; i++) hover.push_back(row_var(i)), ids.push_back(p.rows[i].id);
+    a.push(Value::S("pcOver")).define_local2(); // the row under the pointer, and the one it focused last
+    a.push(Value::S("pcHover")).define_local2();
     a.function2("PagePrepare", [&](Asm &f) {
         for (size_t i = 0; i < k; i++) {
             const RowSpec &r = p.rows[i];
@@ -442,6 +1066,17 @@ void page_script(Movie &mv, const PageScript &p)
     a.function2("Update", [&](Asm &f) {
         emit_heal(f, row_var(0), classes, std::to_string(p.page_id));
         call_function(f, "Update0");
+        hover_block(f, hover, ids);
+        // Keep a slider's knob on its setting: the port's own mouse click moves the setting (input/bindings.cpp
+        // pcset::slide) without the game's widget, which would otherwise leave the knob where the pad last left it.
+        for (size_t i = 0; i < k; i++) {
+            if (p.rows[i].kind != RowSpec::Slider) continue;
+            defined({list_var(i), "SetValue"})(f);
+            size_t none = f.branch(0x9D);
+            call(f, {list_var(i)}, "SetValue",
+                 {at({"_global", "externObject", "FEPCS" + std::to_string(p.rows[i].id)})});
+            f.land(none);
+        }
         if (debug) { // tests: each input reports the page's state (PCDebug in black.log)
             at({"_global", "externObject", "FEInputId"})(f);
             f.logical_not();
@@ -506,7 +1141,8 @@ void options_row(Movie &mv)
     Classes classes = own_classes_prepare(mv);
     Asm a(mv);
     own_classes_script(a, classes, "opt");
-    heal_update(a, "pcButton", classes, "opt");
+    heal_update(a, "pcButton", classes, "opt",
+                {"controllerButton", "soundButton", "pictureButton", "Playerprofile", "pcButton"});
     a.push(Value::S("pcButton")).define_local2();
     a.function2("PagePrepare", [](Asm &f) {
         call_function(f, "PagePrepare0");
@@ -533,7 +1169,7 @@ void options_row(Movie &mv)
 // START MISSION / OPTIONS) gets QUIT at the bottom, in the up / down ring between the last and the first button; it
 // asks the port to close the game (PCQuit, like closing the window).
 void main_menu_quit(Movie &mv, int textanim, float dy, int reveal, uint32_t bar_depth, uint32_t new_bar_depth,
-                    const char *last, const char *first)
+                    const char *last, const char *first, const std::vector<std::string> &hover)
 {
     add_menu_row(mv, mv.character(textanim), "QUIT", "Quit_Text", dy, reveal, bar_depth, new_bar_depth);
     uint32_t script = mv.main_script();
@@ -541,7 +1177,7 @@ void main_menu_quit(Movie &mv, int textanim, float dy, int reveal, uint32_t bar_
     Classes classes = own_classes_prepare(mv);
     Asm a(mv);
     own_classes_script(a, classes, "main");
-    heal_update(a, "quitButton", classes, "main");
+    heal_update(a, "quitButton", classes, "main", hover);
     a.push(Value::S("quitButton")).define_local2();
     a.function2("PagePrepare", [last, first](Asm &f) {
         call_function(f, "PagePrepare0");
@@ -573,19 +1209,42 @@ void pc_menu(Movie &mv)
     literal(mv, mv.character(18), "PC SETTINGS");
     const int texts[4] = {14, 11, 8, 5}; // rows top to bottom: ControllerSetup, SoundSetup, PictureSetup, Playerprofile
     for (int i = 0; i < 4; i++) literal(mv, mv.character(texts[i]), groups[i].title);
+    // MODS: a fifth row below the four, opening the mods page (mods.h, pcset::mods_group). Same movie and same
+    // measurements as the "PC SETTINGS" row the port adds to the game's own Options page.
+    add_menu_row(mv, mv.character(27), "MODS", "Mods_Text", 25.9f, 55, 21, 22);
     mv.rename_function(mv.main_script(), "PagePrepare", "PagePrepare0");
     mv.rename_function(mv.main_script(), "Update", "Update0");
     Classes classes = own_classes_prepare(mv);
     Asm a(mv);
     own_classes_script(a, classes, "pcs");
     heal_update(a, "controllerButton", classes, "pcs");
+    // the rows this page shows, top to bottom, as the pointer finds them: the game's own four and the port's MODS row
+    heal_update(a, "modsButton", classes, "pcs",
+                {"controllerButton", "soundButton", "pictureButton", "Playerprofile", "modsButton"});
+    a.push(Value::S("modsButton")).define_local2();
+    a.push(Value::S("pcOver")).define_local2(); // the row under the pointer, and the one it focused last
+    a.push(Value::S("pcHover")).define_local2();
     a.function2("PagePrepare", [&groups](Asm &f) {
         call_function(f, "PagePrepare0");
         const char *buttons[4] = {"controllerButton", "soundButton", "pictureButton", "Playerprofile"};
         for (int i = 0; i < 4; i++) set(f, {buttons[i]}, "actionSelectPage", S(groups[i].page));
+        make(f, "modsButton", "BkMenuButton", {at({"Main", "TextAnim", "Mods_Text"})});
+        set(f, {"Playerprofile"}, "buttonDown", at({"modsButton"}));
+        set(f, {"modsButton"}, "buttonUp", at({"Playerprofile"}));
+        set(f, {"modsButton"}, "buttonDown", at({"controllerButton"}));
+        set(f, {"controllerButton"}, "buttonUp", at({"modsButton"}));
+        set(f, {"modsButton"}, "actionSelectPage", S(pcset::mods_group().page));
         call(f, {"MyMenu"}, "SetFunctionBack"); // no argument: not Options' own back (save and leave)
         call(f, {"MyMenu"}, "SetPageBack", {S("OptionsMenuXbox")});
         f.push_true().ret();
+    });
+    a.function2("PageRelease", [](Asm &f) {
+        call_function(f, "PageRelease0");
+        call(f, {"modsButton"}, "Release");
+    });
+    a.function2("PageDestruct", [](Asm &f) {
+        call_function(f, "PageDestruct0");
+        f.push(Value::S("modsButton")).delete2().pop();
     });
     mv.append_control(mv.main, 0, mv.do_action(a.finish()));
 }
@@ -755,7 +1414,8 @@ void pause_row(Movie &mv)
     Classes classes = own_classes_prepare(mv);
     Asm a(mv);
     own_classes_script(a, classes, "pause");
-    heal_update(a, "pcButton", classes, "pause");
+    heal_update(a, "pcButton", classes, "pause",
+                {"continueButton", "objectivesButton", "restartButton", "optionsButton", "pcButton", "quitButton"});
     a.push(Value::S("pcButton")).define_local2();
     a.function2("PagePrepare", [](Asm &f) {
         call_function(f, "PagePrepare0");
@@ -868,6 +1528,8 @@ void pause_page(Movie &mv)
     }
     a.push(Value::S("pcRows")).define_local2();
     a.push(Value::S("pcLayout")).define_local2();
+    a.push(Value::S("pcOver")).define_local2(); // the row under the pointer, and the one it focused last
+    a.push(Value::S("pcHover")).define_local2();
     a.function2("PagePrepare", [&](Asm &f) {
         for (size_t i = 0; i < kRows; i++) {
             make(f, row_var(i), "BkMultiChoiceMenuButton", {at(clip(i))});
@@ -925,6 +1587,9 @@ void pause_page(Movie &mv)
             set(f, bar, "_visible", row_bits(i, 1, 1));
             call(f, bar, "gotoAndStop", {row_bits(i, 8, 255)});
         }
+        std::vector<std::string> hover;
+        for (size_t i = 0; i < kRows; i++) hover.push_back(row_var(i));
+        hover_block(f, hover, {});
     });
     a.function2("PageRelease", [&](Asm &f) {
         for (size_t i = 0; i < kRows; i++) {
@@ -1167,15 +1832,27 @@ bool fe_build_pages(const std::wstring &game_dir, const std::wstring &out_root)
         Movie keys(sound);
         choice_page(keys, "KEY BINDINGS", key_rows(), controls, false, 100);
         add_movie(c, lower(kBindings), keys.build());
+        const pcset::Group &mg = pcset::mods_group(); // the MODS row on the PC SETTINGS page opens this one
+        Movie mods(sound);
+        choice_page(mods, mg.title, group_rows(mg, false), "PCSettings", true, 4);
+        add_movie(c, lower(mg.page), mods.build());
         Movie opt(options);
         options_row(opt);
         c.movies["optionsmenuxbox"] = opt.build();
         Movie title(movie(c, "blacktitlemenu")); // QUIT under OPERATOR PROFILE (rows 25.1 apart, revealed 43/46/49)
-        main_menu_quit(title, 18, 25.1f, 49, 11, 12, "profileButton", "continueButton");
+        main_menu_quit(title, 18, 25.1f, 49, 11, 12, "profileButton", "continueButton",
+                       {"continueButton", "optionsButton", "profileButton", "quitButton"});
         c.movies["blacktitlemenu"] = title.build();
         Movie fresh(movie(c, "blacktitlemenu2")); // QUIT under OPTIONS (revealed 43/46)
-        main_menu_quit(fresh, 14, 25.0f, 46, 7, 8, "optionsButton", "startButton");
+        main_menu_quit(fresh, 14, 25.0f, 46, 7, 8, "optionsButton", "startButton",
+                       {"startButton", "optionsButton", "quitButton"});
         c.movies["blacktitlemenu2"] = fresh.build();
+        // the game's own pages the pointer works on (fe/pages.cpp game_page): the same names as the front end's own
+        // (input/bindings.cpp pointer_page_up lists them)
+        game_pages(c, {"controllersetup", "controllercustomxbox", "soundsetupxbox", "picturesetupxbox", "profileoptions",
+                       "operatorprofile", "choosedifficulty", "difficulty", "createblackprofile", "virtualkeyboard",
+                       "memcardmessage", "memcardslots", "missionmodeselect", "missionmodeselect2", "unlocks",
+                       "unlockweapons", "resultsscreen", "resultseasy"});
     }, fe) && write_file(dir + L"FEMain.bin", fe);
     if (!main_ok) DeleteFileW((dir + L"FEMain.bin").c_str()); // not an old build of the pages
     // the pause menu: PC SETTINGS after OPTIONS (InGameOn.bin) opens the one PC SETTINGS pause page (a copy of the
@@ -1185,10 +1862,18 @@ bool fe_build_pages(const std::wstring &game_dir, const std::wstring &out_root)
         Movie root(movie(c, "pausemenu"));
         pause_row(root);
         c.movies["pausemenu"] = root.build();
+        // confirmwarning is left alone: its own focus handler runs on every SetFocusButton the walk makes (like
+        // pausemenuobjectives below), and leaving it focused that way crashed the front end (000fc383) as soon as
+        // Back was pressed on it -- a right click on the quit confirmation closed the game.
+        game_pages(c, {"objectives"});
     }, on) && rebuild(game_dir, L"PseMenu.bin", [](Container &c) {
         Movie page(movie(c, "pausemenuoptionxbox"));
         pause_page(page);
         add_movie(c, lower(ingame("PCPage")), page.build());
+        // pausemenuoptionxbox (the pause menu's OPTIONS) is left alone for the same reason as confirmwarning above:
+        // the walk's SetFocusButton runs its own focus handler again, and Back on the patched page crashed the front
+        // end at 000fc383 (the user: "no pausa quando eu abro opções com o mouse e clico depois com o click direito, o
+        // jogo fecha sozinho"). A click there sends the game's own select, which needs no walk.
     }, pse) && write_file(dir + L"InGameOn.bin", on) && write_file(dir + L"PseMenu.bin", pse);
     if (!pause_ok) { // a half-written pair would point the pause menu at pages that are not there
         DeleteFileW((dir + L"InGameOn.bin").c_str());

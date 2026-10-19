@@ -17,12 +17,21 @@ game.**
 | Frame rate | 30, 60, **120**, 144, 165 or 240 fps (default **120**). Frame pacing rebuilt so high rates no longer run in slow motion; short waits stay accurate even on PCs with coarse system timers. |
 | Crosshair | **HD crosshair**: the HUD texture rebuilt at 4x from your own game files with a sharp dot (white disc, black outline), mipmapped so the outline never flickers away. Colours set in `black.ini`: **green** normally, **blood red** over an enemy. |
 | Aiming | **Hold to aim** (aim while the button is held) or the original toggle, in PC SETTINGS > CONTROLS > AIM. |
-| Aim assist | AUTO-AIM: OFF, ON or **CONTROLLER ONLY** (default): the pull towards enemies works with a controller and switches off as soon as the keyboard or mouse is used. |
+| Aim assist | AUTO-AIM: OFF, ON or **CONTROLLER ONLY** (default), in PC SETTINGS > CONTROLS: the pull towards enemies works with a controller and switches off as soon as the keyboard or mouse is used. |
 | Crouch | **Hold to crouch** (crouch while Ctrl is held), whatever the game profile says, in PC SETTINGS > CONTROLS > CROUCH. |
 | Weapons | Keys **1** and **2** select the first or second weapon you carry; **Q** swaps between them. |
-| Walk | **Shift** to walk slowly (the movement keys push only part of the way; `walk_speed` in `black.ini`). |
+| Walk | **Shift** to walk slowly, at 25% of full speed (`walk_speed` in `black.ini`). |
+| Audio | First start (no saved profile yet): sound effects at 60% and music at 40% in the game's audio settings. |
 | Prompts | Every Xbox button icon replaced by the key you bound: hints ("[X] to use the health packs"), pick-up and swap prompts ("Press [F] to pick up"), "PRESS ENTER" on the title screen and the menus' legend ([ARROWS] select, [ENTER] confirm, [BACKSPACE] back). Prompts follow your own bindings. |
 | Menus | Controller options readable in the Portuguese translation (YES / NO instead of overlapping ON / OFF words). |
+| Mouse in menus | The row under the cursor is highlighted; left click confirms (or changes the value), right click goes back, the wheel scrolls. The keyboard keeps the highlight until the mouse is moved. |
+| Mods | A `port\mods\` folder: each mod is a folder whose `game\` files replace the game's. PC SETTINGS > MODS turns each one on or off; the game restarts by itself when you return to the main menu. |
+| Field of view | Field of view (default **100**) and **weapon field of view** (default **85**) side by side in PC SETTINGS > AUDIO AND GAME. |
+| HUD | With the 16:9 aspect ratio the HUD's corner panels keep their original shape instead of being stretched; at 4:3 the HUD is the original. |
+| FPS counter | Optional frame rate counter on screen (off by default). |
+| Subtitles | Optional `.srt` subtitles for the movies (**off** by default, as some versions of the game already have them in the videos). |
+| Graphics | Anisotropic filtering (default **16X**), window size (default **1080p**) and resolution scale (default **4X**). |
+| HD texture pack | Uses a PCSX2 texture pack of the PS2 version (for example *BLACK HD Reimagined*): each game texture is matched to its HD version by its picture, the first time it is seen, and loaded into video memory. Unmatched textures stay as they are. |
 | Textures | Texture replacement: a PNG in `port\textures\` named after a game texture replaces it (any size, mipmapped). `--dump-textures` saves the game's textures to `port\textures\dump\` to find their names. |
 | Performance | Accurate frame pacing above 60 fps without a busy core: the game's vertical blank runs at the chosen rate on a separate CPU. |
 
@@ -41,7 +50,7 @@ look, bindable keys, XInput controllers, borderless fullscreen, settings in the 
    folder to `game`. Only the NTSC-U build works: `game\default.xbe` must have SHA-256
    `DF2739C372D254A90AEECCF5971D12097F22D89FBB90DB021FDA96DD4DEB68F6`
    (PowerShell: `Get-FileHash game\default.xbe -Algorithm SHA256`).
-2. Extract `BlackHD-PCv1.0.zip` next to `game`, so the `port` folder sits beside it:
+2. Extract `BlackHD-PCv1.2.zip` next to `game`, so the `port` folder sits beside it:
 
    ```
    BLACK\
@@ -59,6 +68,13 @@ look, bindable keys, XInput controllers, borderless fullscreen, settings in the 
 The port keeps saved games (`savedata\`), settings (`black.ini`), the log (`black.log`) and its menu files (`cache\`)
 in `port`. Nothing is written to `game`. A translated copy of the game (for example the Portuguese translation) works
 the same way, as long as `default.xbe` is the NTSC-U one.
+
+### Optional: HD texture pack
+
+No textures are included. To use a PCSX2 texture pack of BLACK (PS2, SLUS-21376), put its `replacements` folder
+inside `port\textures` (`port\textures\replacements`), or write its path in `black.ini` (`texture_pack = C:\...`). The first start indexes the pack (a few seconds, cached in `port\cache`).
+`port\cache\texpack.map` lists every match; changing a line's file to `-` keeps the game's own texture there.
+`texture_pack = off` turns it off.
 
 ## Controls (keyboard and mouse)
 
@@ -81,7 +97,8 @@ the same way, as long as `default.xbe` is the NTSC-U one.
 | Show objectives | Space |
 | Pause | Esc |
 
-Menus: arrow keys, Enter to confirm, Backspace to go back. Every key can be changed in
+Menus: arrow keys, Enter to confirm, Backspace to go back, or the mouse (left click confirms, right click goes back,
+the wheel scrolls). Every key can be changed in
 PC SETTINGS > CONTROLS > KEY BINDINGS (two keys per action). Controllers work as well.
 
 ## Settings
@@ -90,10 +107,17 @@ In the game: Options > PC SETTINGS (main menu) and PC SETTINGS in the pause menu
 
 | Page | Settings |
 |---|---|
-| VIDEO | render resolution, anti-aliasing, field of view, brightness, gamma, fullscreen |
-| DISPLAY | aspect ratio, frame rate (applies from the next start), geometry seam fill, effects at Xbox size |
-| AUDIO AND GAME | room reverb, auto-aim (off / on / controller only), skip any movie |
-| CONTROLS | mouse sensitivity, mouse inversion, aim (hold / toggle), crouch (hold / profile option), key bindings |
+| VIDEO | render resolution, window size, resolution scale, anti-aliasing, anisotropic filtering, fullscreen |
+| DISPLAY | aspect ratio, frame rate (both apply from the next start), geometry seam fill, effects at Xbox size, brightness, gamma |
+| AUDIO AND GAME | room reverb, skip any movie, movie subtitles, FPS counter, field of view, weapon field of view |
+| CONTROLS | mouse sensitivity, mouse inversion, auto-aim (off / on / controller only), aim (hold / toggle), crouch (hold / profile option), key bindings |
+| MODS | each mod in `port\mods\`, on or off |
+
+The aspect ratio is only on the main menu's pages; everything else is also in the pause menu.
+
+First start (no `black.ini` settings yet): 120 fps, window 1080p, resolution scale 4X, anisotropic filtering 16X,
+field of view 100, weapon field of view 85, HD crosshair, hold to aim and crouch, auto-aim for the controller only,
+subtitles and FPS counter off.
 
 Also in `port\black.ini`:
 
@@ -102,10 +126,18 @@ Also in `port\black.ini`:
 | `hd_reticle = 1` | the HD crosshair (0 = the game's) |
 | `reticle_colour = 00FF00` | crosshair colour (RRGGBB, or `game`) |
 | `reticle_enemy_colour = 8C0000` | crosshair colour over an enemy |
-| `walk_speed = 0.45` | share of full speed while walking (0.1 to 1.0) |
+| `walk_speed = 0.25` | share of full speed while walking (0.1 to 1.0) |
 | `crouch_hold = 1` | crouch while the key is held |
 | `aim_hold = 1` | aim while the key is held |
 | `autoaim = 2` | 0 off, 1 on, 2 controller only |
+| `texture_pack =` | folder of an HD texture pack (empty = `port\textures\replacements`, `off` = none) |
+| `texture_pack_max = 2048` | largest pack texture size loaded (bigger ones use a smaller mip) |
+| `fov = 100.0` | field of view in play (70 = the game's) |
+| `viewmodel_fov = 85.0` | weapon field of view (70 = the game's) |
+| `aniso = 16` | anisotropic filtering (0 = the game's filters, 2, 4, 8 or 16) |
+| `window = 0x1080` | window size (`WIDTHxHEIGHT`; width 0 = from the aspect ratio) |
+| `fpscounter = 0` | frame rate counter on screen |
+| `subtitles = 0` | `.srt` subtitles over the movies |
 
 `black.exe --help` lists the command-line options.
 
@@ -129,6 +161,8 @@ This builds `black.exe` and `blackrt.dll`.
 ### Projects studied
 
 - black-pc by Spark198rus — native Windows port of BLACK, compared for features.
+- black-pc-modloader by Darketz — mods, mouse in the menus, FPS counter, movie subtitles, 16:9 HUD and weapon field of
+  view, adapted from its code.
 - BLACK-XBERecomp by TGP482 — another PC version of BLACK (static recompilation), compared for features.
 - Cxbx-Reloaded and xemu — references for how the Xbox kernel and the NV2A graphics chip behave (no code copied).
 - XbSymbolDatabase (Cxbx-Reloaded) — identifies the Xbox library functions in the game.
@@ -145,7 +179,7 @@ This builds `black.exe` and `blackrt.dll`.
 ## License
 
 BlackHD-PC is free software under the GNU General Public License, version 2 or (at your option) any later version,
-like the project it is based on. See `LICENSE` and `NOTICE`.
+like the project it is based on. See `LICENSE`.
 
 ## Legal
 

@@ -53,12 +53,12 @@ struct Config {
     uint32_t shot_start = 0;   // --shot-start: no cadence screenshots before this many seconds
     unsigned debug_frame_end = 0; // --debug-frame N-M: last frame of a traced range (0 = single frame)
     float gamma = 1.0f;        // output gamma applied when presenting (F7/F8 adjust it live)
-    float scale = 3.0f;        // render resolution = Xbox resolution x scale (any factor, e.g. 2.25 = 1080 lines)
+    float scale = 4.0f;        // render resolution = Xbox resolution x scale (any factor, e.g. 2.25 = 1080 lines)
     int render_w = 0, render_h = 0; // --resolution WxH or H: the picture's render size instead of a scale
     bool render_native = false;     // --resolution native: render at the window's (or screen's) size
     float render_factor = 1.0f;     // with native: render at this multiple of the window
     std::wstring rescale_at;        // tests: --rescale-at "S:factor,..." = native at that factor from S seconds
-    int window_w = 0, window_h = 0; // window client size; 0 = fit the screen
+    int window_w = 0, window_h = 1080; // window client size; 0 = fit the screen (width 0: the height at the aspect ratio)
     // The console's video settings report a widescreen TV (EEPROM XC_VIDEO bit 16), as the Xbox Series does
     // for original Xbox games: BLACK then uses a 16:9 projection and its `_wide` UI layouts in the same 640x480
     // buffer (anamorphic), and the loader renders and shows that buffer at 16:9. --normal-aspect turns it off.
@@ -68,27 +68,37 @@ struct Config {
     // scale most PC shooters use.
     float mouse_sens = 2.0f;
     bool mouse_invert = false;
-    bool aim_hold = false;     // aim while the aim key is held (input/bindings.cpp; PC SETTINGS); the game's aim toggles
-    int reticle_colour = -1;       // black.ini RRGGBB: the reticle's tint (reticle.cpp); -1 = the game's
-    int reticle_enemy_colour = -1; // its tint over an enemy; -1 = the game's
-    bool hd_reticle = false;    // black.ini hd_reticle: the HUD atlas at 4x with a sharp dot reticle (d3d/texture.cpp)
+    bool aim_hold = true;      // aim while the aim key is held (input/bindings.cpp; PC SETTINGS); the game's aim toggles
+    int reticle_colour = 0x00FF00;       // black.ini RRGGBB: the reticle's tint (reticle.cpp); -1 = the game's
+    int reticle_enemy_colour = 0x8C0000; // its tint over an enemy; -1 = the game's
+    bool hd_reticle = true;     // black.ini hd_reticle: the HUD atlas at 4x with a sharp dot reticle (d3d/texture.cpp)
     bool dump_textures = false; // --dump-textures: write uploaded textures to textures\dump\ (d3d/texture.cpp)
-    bool crouch_hold = false;  // crouch while the key is held, overriding the profile's toggle option (input/mouselook.cpp)
-    float walk_speed = 0.45f;  // the walk key's share of a full stick push for the movement keys (black.ini walk_speed)
+    // black.ini texture_pack: a folder of HD textures from a PCSX2 pack of the PS2 version, matched to the game's by
+    // picture (d3d/texpack.cpp). Empty = textures\replacements in the port folder when it exists; "off" = none.
+    std::wstring texture_pack;
+    int texture_pack_max = 2048; // black.ini texture_pack_max: larger pack textures are loaded from a smaller mip
+    bool crouch_hold = true;   // crouch while the key is held, overriding the profile's toggle option (input/mouselook.cpp)
+    float walk_speed = 0.25f;  // the walk key's share of a full stick push for the movement keys (black.ini walk_speed)
     bool timer_vblank = false; // --timer-vblank: free-running 59.94 Hz vblank instead of following the display
     bool display_vblank = false; // --display-vblank (tests): follow the display even with --background
     bool effects_native = false; // the small effect buffers at their Xbox size (PC SETTINGS); default: render scale, smoothed
     bool seam_fill = true;     // fill hairline cracks between geometry pieces (PC SETTINGS, --no-seamfill)
-    bool autoaim = false;      // the game's view pull toward targets, off by default (input/autoaim.cpp; --autoaim, PC SETTINGS)
-    bool autoaim_pad_only = false; // with autoaim: only while the controller is the device in use (black.ini autoaim = 2)
-    float fov = 70.0f;         // horizontal field of view in play, degrees (fov.cpp; --fov, PC SETTINGS; the game's is 70)
+    // With the 16:9 aspect ratio the in-play HUD's corner panels are squeezed back to their 4:3 shape (d3d/draw.cpp).
+    int aniso = 16;              // anisotropic filtering max (0 = the game's filters, else 2/4/8/16; PC SETTINGS)
+    float viewmodel_fov = 85.0f; // the gun and hands' field of view in play, degrees (fov.cpp; 70 = the game's)
+    bool fpscounter = false;     // draw the current frame rate over the picture (d3d/fps.cpp)
+    bool subtitles = false;      // draw .srt subtitles over the movies (an enabled mod's subtitles\ folder; off: some
+                                 // versions of the game have them in the videos)
+    bool autoaim = true;       // the game's view pull toward targets (input/autoaim.cpp; --autoaim, PC SETTINGS)
+    bool autoaim_pad_only = true; // with autoaim: only while the controller is the device in use (black.ini autoaim = 2)
+    float fov = 100.0f;        // horizontal field of view in play, degrees (fov.cpp; --fov, PC SETTINGS; the game's is 70)
     bool skip_movies = true;   // A / START skip any movie, also unseen ones (input/movies.cpp; --no-movie-skip, PC SETTINGS)
     bool known_build = false;  // the XBE is the NTSC-U build the address tables are for (main.cpp)
     std::wstring game_override; // --game-override: files there replace the game's of the same relative path
     std::wstring menu_cache;    // the port's rebuilt front-end files (fe/pages.cpp), served like --game-override after it
     bool pc_menus = true;       // build the in-game PC SETTINGS pages (--no-pc-menus: the game's own menus only)
     std::wstring press_file;    // --press-file (tests): presses and screenshot requests appended by a driver
-    int fps = 60;              // 60 (default): swap interval TWO paced as ONE, world step 1/60 s, weapon refire kept at
+    int fps = 120;             // 120 (default), 60: swap interval TWO paced as ONE, world step 1/60 s, weapon refire kept at
                                // whole 1/30 s steps (timing.cpp); --fps 30 = the original
     // Menu choices for widescreen and fps, which the game reads at boot: saved to black.ini for the next run while
     // the running session keeps the values above (0 / -1 = no change chosen).

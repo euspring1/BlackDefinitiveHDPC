@@ -7,6 +7,7 @@
 // File handles are real Windows handles opened through ntdll, so read/write/APC/event semantics carry over.
 #include "kernel/kexports.h"
 #include "kernel/nt.h"
+#include "mods.h"
 
 #include <cctype>
 #include <map>
@@ -127,19 +128,28 @@ NTSTATUS resolve(HANDLE root, const XANSI_STRING *name, Resolved &r)
     for (char &c : rest)
         if (c == '/') c = '\\';
     r.host_nt = L"\\??\\" + best->host + widen(rest);
-    // --game-override, then the port's rebuilt menus: a file of the same relative path there replaces the game's
-    if (best->partition == -1 && !rest.empty())
-        for (const std::wstring *root : {&g_cfg.game_override, &g_cfg.menu_cache}) {
-            if (root->empty()) continue;
-            std::wstring alt = full_path(*root) + widen(rest);
-            DWORD a = GetFileAttributesW(alt.c_str());
-            if (a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY)) {
-                r.host_nt = L"\\??\\" + alt;
-                static std::set<std::wstring> told;
-                if (told.insert(alt).second) logf("files: %s from %s", rest.c_str(), narrow(alt).c_str());
-                break;
+    // --game-override, then the enabled mods, then the port's rebuilt menus: a file of the same relative path
+    // there replaces the game's (the mods sit before the cache so a mod can replace a rebuilt file too)
+    if (best->partition == -1 && !rest.empty()) {
+        std::wstring alt;
+        bool have = mods::resolve(rest, alt);
+        if (!have)
+            for (const std::wstring *root : {&g_cfg.game_override, &g_cfg.menu_cache}) {
+                if (root->empty()) continue;
+                std::wstring cand = full_path(*root) + widen(rest);
+                DWORD a = GetFileAttributesW(cand.c_str());
+                if (a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY)) {
+                    alt = cand;
+                    have = true;
+                    break;
+                }
             }
+        if (have) {
+            r.host_nt = L"\\??\\" + alt;
+            static std::set<std::wstring> told;
+            if (told.insert(alt).second) logf("files: %s from %s", rest.c_str(), narrow(alt).c_str());
         }
+    }
     return XSTATUS_SUCCESS;
 }
 

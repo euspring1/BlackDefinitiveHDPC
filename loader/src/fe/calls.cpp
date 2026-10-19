@@ -97,6 +97,31 @@ void pc_quit(const char *, const char *, const char *)
 // a page found its menu gone and made it again (fe/pages.cpp emit_heal)
 void pc_healed(const char *, const char *, const char *) { logf("fe: a page's menu was gone; made again"); }
 
+// The row the pointer put the focus on (fe/pages.cpp hover_block / hover_walk). The third parameter packs the setting
+// the row is, the row's middle in the picture's pixels and its width. A row of the port's own (a page it builds) is
+// kPortBase + (id + 1) * kPackId + middle * kPackW + width (the same numbers as fe/pages.cpp); a row of the game's
+// own is the middle itself (its setting is -1). The middle is what the port asks a click's side against when the
+// button goes down, and the width lets a slider take the pointer's place along the row (input/bindings.cpp menu_row).
+constexpr int kPortBase = 0x10000000, kPackW = 2048, kPackId = kPackW * kPackW;
+void pc_hover(const char *row, const char *value, const char *packed)
+{
+    int index = row ? atoi(row) : -1;
+    int code = packed ? atoi(packed) : 0;
+    int id, mid, width = 0;
+    if (code >= kPortBase) { // a row of the port's own: the setting, the middle and the row's width
+        int rest = code - kPortBase;
+        width = rest % kPackW;
+        mid = (rest / kPackW) % kPackW;
+        id = rest / kPackId - 1;
+    } else { // a row of the game's own: no setting of the port's (id -1), the middle is the whole code
+        id = code / 4096 - 1;
+        mid = code % 4096;
+    }
+    if (getenv("BLACK_FE_DEBUG"))
+        logf("fe: pointer on row %s%s id %d mid %d w %d", row, value && value[0] == 't' ? " (value)" : "", id, mid, width);
+    bindings::menu_row(index, value && value[0] == 't', id, mid, width);
+}
+
 struct Handler {
     const char *name;
     void (*fn)(const char *, const char *, const char *);
@@ -111,10 +136,18 @@ const Handler kHandlers[] = {
     {"PCRow", pc_row},
     {"PCBack", pc_back},
     {"PCHealed", pc_healed},
+    {"PCHover", pc_hover},
     {"PCQuit", pc_quit},
 };
 
 } // namespace
+
+// The port changed a setting from the pages the pointer drives (input/bindings.cpp menu_row): the page shows it.
+void fe_refresh()
+{
+    refresh_ui();
+    pcset::refresh_sliders();
+}
 
 // The thunk's callee: true when the port took the call (the dispatcher then returns at once).
 static int __cdecl fe_dispatch(uint8_t *fe)
@@ -132,6 +165,7 @@ static int __cdecl fe_dispatch(uint8_t *fe)
         p3(fe, kParam[2], kParamSize);
     if (strncmp(name.s, "PC", 2) != 0) {
         logf("fe: game call %s('%s', '%s', '%s')", name.s, p1.s, p2.s, p3.s);
+        bindings::game_value_call(atoi(p1.s)); // the value the game's widget handed the setting (menu_row takes it)
         return 0;
     }
     logf("fe: port call %s('%s', '%s', '%s')", name.s, p1.s, p2.s, p3.s);

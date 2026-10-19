@@ -9,6 +9,8 @@
 #include "fe/pages.h"
 #include "fov.h"
 #include "reticle.h"
+#include "audio_defaults.h"
+#include "mods.h"
 #include "hooks.h"
 #include "image.h"
 #include "timing.h"
@@ -216,6 +218,24 @@ bool parse_args()
         else if (a == L"--timer-vblank") g_cfg.timer_vblank = true;
         else if (a == L"--dump-textures") g_cfg.dump_textures = true;
         else if (a == L"--hd-reticle") g_cfg.hd_reticle = true;
+        else if (a == L"--fpscounter") { g_cfg.fpscounter = true; settings_mark_cli("fpscounter"); }
+        else if (a == L"--subtitles") { g_cfg.subtitles = true; settings_mark_cli("subtitles"); }
+        else if (a == L"--aniso") {
+            settings_mark_cli("aniso");
+            std::wstring v;
+            if (!next(v)) return false;
+            int n = _wtoi(v.c_str());
+            g_cfg.aniso = n >= 16 ? 16 : n >= 8 ? 8 : n >= 4 ? 4 : n >= 2 ? 2 : 0;
+        } else if (a == L"--viewmodel-fov") {
+            settings_mark_cli("viewmodel_fov");
+            std::wstring v;
+            if (!next(v)) return false;
+            g_cfg.viewmodel_fov = std::clamp((float)_wtof(v.c_str()), 50.0f, 120.0f);
+        }
+        else if (a == L"--texture-pack") {
+            settings_mark_cli("texture_pack");
+            if (!next(g_cfg.texture_pack)) return false;
+        }
         else if (a == L"--reticle-colour" || a == L"--reticle-enemy-colour") {
             bool enemy = a == L"--reticle-enemy-colour";
             settings_mark_cli(enemy ? "reticle_enemy_colour" : "reticle_colour");
@@ -254,6 +274,7 @@ bool parse_args()
                 if (g_cfg.render_h < 240 || g_cfg.render_h > 8192) g_cfg.render_w = g_cfg.render_h = 0;
             }
         } else if (a == L"--window") {
+            settings_mark_cli("window");
             std::wstring v;
             if (!next(v)) return false;
             g_cfg.window_w = _wtoi(v.c_str());
@@ -457,7 +478,9 @@ int run(void *reserve, unsigned reserve_size)
     if (known_build) install_autoaim_patch();
     if (known_build) install_fov_patch();
     if (known_build) install_reticle_colours();
+    if (known_build) audio_defaults_init();
     if (known_build) install_fe_calls();
+    mods::scan(); // before the pages are built: the MODS page lists them
     if (known_build && g_cfg.pc_menus) { // the in-game PC SETTINGS pages, from the user's own front-end file
         std::wstring cache = g_cfg.port_dir + L"\\cache\\menus";
         if (fe_build_pages(host_full_path(g_cfg.game_dir), cache)) g_cfg.menu_cache = cache;

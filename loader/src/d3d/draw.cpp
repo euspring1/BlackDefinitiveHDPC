@@ -11,11 +11,13 @@
 #include "d3d/state.h"
 #include "d3d/vshader.h"
 #include "fov.h"
+#include "input/bindings.h"
 #include "perf.h"
 
 #include <wincodec.h>
 
 #include <cstring>
+#include <set>
 #include <unordered_map>
 #include <vector>
 
@@ -258,10 +260,59 @@ template <typename F> void ts_on_change(int s, int t, F apply)
     apply(v);
 }
 
+// A draw that hud169 will squeeze: read the raw Xbox positions to decide before the state is applied (so the
+// sampler can be set to LINEAR in time; the game's own HUD font is minified about 2:1 even without the squeeze,
+// and point sampling eats its thin strokes).
+bool g_hud_linear;
+
+bool hud169_precheck(uint32_t count, const uint8_t *up, uint32_t up_stride)
+{
+    if (!g_cfg.widescreen || count < 3 || !up) return false;
+    if (!bindings::in_play()) return false;
+    const Viewport &v = g_st.viewport;
+    if (v.X || v.Y || v.Width != 640 || v.Height != 480) return false;
+    const VertexShader *vs = vs_from_handle(g_st.vertex_shader);
+    if (!vs) return false;
+    for (uint32_t e = 0; e < vs->num_elements; e++) {
+        const VertexElement &el = vs->elements[e];
+        if (el.reg != 0 || el.stream != 0) continue;
+        uint32_t comp = el.xtype == 0x42 ? 4 : el.xtype == 0x32 ? 3 : el.xtype == 0x22 ? 2 : 0;
+        if (!comp) return false;
+        float mnx = 1e30f, mxx = -1e30f, mny = 1e30f, mxy = -1e30f;
+        for (uint32_t i = 0; i < count; i++) {
+            const float *p = (const float *)(up + (size_t)i * up_stride + el.offset);
+            if ((comp >= 3 && p[2] != 0.0f) || (comp >= 4 && p[3] != 1.0f)) return false;
+            if (!(p[0] > -4.0f && p[0] < 644.0f) || !(p[1] > -4.0f && p[1] < 484.0f)) return false;
+            mnx = std::min(mnx, p[0]); mxx = std::max(mxx, p[0]);
+            mny = std::min(mny, p[1]); mxy = std::max(mxy, p[1]);
+        }
+        return !(mxx - mnx > 640.0f * 0.85f && mxy - mny > 480.0f * 0.85f);
+    }
+    return false;
+}
+
+// Force linear filtering on the stages and drop the cache, so the next draw re-sends the game's own filters.
+void texture_filters_linear()
+{
+    IDirect3DDevice9 *d = host3d::dev();
+    for (int s = 0; s < 4; s++) {
+        d->SetSamplerState(s, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+        d->SetSamplerState(s, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+        for (int t = 0; t < 32; t++) g_ts_valid[s][t] = false;
+    }
+    static int logged;
+    if (logged++ < 3) {
+        DWORD v = 0xFFFF;
+        host3d::dev()->GetSamplerState(0, D3DSAMP_MINFILTER, &v);
+        logf("[hud169] force linear, sampler0 minfilter now %u (2=POINT 3=LINEAR)", (unsigned)v);
+    }
+}
+
 void apply_texture_stages(IDirect3DDevice9 *d, bool fixed_function_pixels)
 {
     for (int s = 0; s < 4; s++) {
         IDirect3DBaseTexture9 *t = nullptr;
+        bool rt_sample = false; // the back or depth buffer as a texture: effects passes, keep their filters
         if (Resource *r = g_st.textures[s]) {
             const uint32_t *ts = texture_state(s); // MAGFILTER 3, MINFILTER 4: 2 = LINEAR and up
             t = rt_texture_for((const PixelContainer *)r, g_draw_serial, ts[3] >= 2 || ts[4] >= 2);
@@ -273,6 +324,7 @@ void apply_texture_stages(IDirect3DDevice9 *d, bool fixed_function_pixels)
                      r, r->Data, w, h, (((PixelContainer *)r)->Format >> FMT_FORMAT_SHIFT) & 0xFF);
             }
             if (!t) t = host_texture(r, g_st.palettes[s]);
+            rt_sample = r->Data == backbuffer_data() || r->Data == depthbuffer_data();
         }
         if (t != g_tex_sent[s]) {
             d->SetTexture(s, t);
@@ -283,10 +335,35 @@ void apply_texture_stages(IDirect3DDevice9 *d, bool fixed_function_pixels)
         ts_on_change(s, 2, [&](uint32_t v) { d->SetSamplerState(s, D3DSAMP_ADDRESSW, conv_address(v)); });
         ts_on_change(s, 3, [&](uint32_t v) { d->SetSamplerState(s, D3DSAMP_MAGFILTER, v > 3 ? D3DTEXF_LINEAR : v); });
         ts_on_change(s, 4, [&](uint32_t v) { d->SetSamplerState(s, D3DSAMP_MINFILTER, v > 3 ? D3DTEXF_LINEAR : v); });
+        if (g_hud_linear) { // the HUD is shrunk: filter it instead of dropping texels
+            HRESULT hr1 = d->SetSamplerState(s, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+            HRESULT hr2 = d->SetSamplerState(s, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+            static int told;
+            if (told++ < 4) {
+                DWORD got = 0xFFFF;
+                HRESULT hr3 = d->GetSamplerState(s, D3DSAMP_MINFILTER, &got);
+                logf("[hud169] linear: stage %d hr %08x/%08x get %08x readback %u", s, (unsigned)hr1, (unsigned)hr2,
+                     (unsigned)hr3, (unsigned)got);
+            }
+            g_ts_valid[s][3] = g_ts_valid[s][4] = false; // the next draw re-sends the game's filters
+        }
         ts_on_change(s, 5, [&](uint32_t v) { d->SetSamplerState(s, D3DSAMP_MIPFILTER, v > 2 ? D3DTEXF_LINEAR : v); });
         ts_on_change(s, 6, [&](uint32_t v) { d->SetSamplerState(s, D3DSAMP_MIPMAPLODBIAS, v); });
         ts_on_change(s, 7, [&](uint32_t v) { d->SetSamplerState(s, D3DSAMP_MAXMIPLEVEL, v); });
         ts_on_change(s, 8, [&](uint32_t v) { d->SetSamplerState(s, D3DSAMP_MAXANISOTROPY, v ? v : 1); });
+        if (g_cfg.aniso >= 2 && texture_state(s)[4] >= 2 && !rt_sample) {
+            // Anisotropic filtering (PC SETTINGS > VIDEO): linear minification becomes anisotropic up to the
+            // setting, mipmaps stay the game's. Only what the game filters linearly is upgraded; point-sampled
+            // stages (UI, fonts) are left alone.
+            d->SetSamplerState(s, D3DSAMP_MINFILTER, D3DTEXF_ANISOTROPIC);
+            d->SetSamplerState(s, D3DSAMP_MAXANISOTROPY, (DWORD)g_cfg.aniso);
+            g_ts_valid[s][4] = g_ts_valid[s][8] = false; // the next draw re-sends the game's filters
+            static bool told;
+            if (!told) {
+                logf("[d3d] anisotropic filtering x%d", g_cfg.aniso);
+                told = true;
+            }
+        }
         ts_on_change(s, 29, [&](uint32_t v) { d->SetSamplerState(s, D3DSAMP_BORDERCOLOR, v); });
         if (t && texture_is_replaced(t)) { // its own mip chain, whatever the game asked for a texture that had none
             d->SetSamplerState(s, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
@@ -588,6 +665,71 @@ uint32_t convert_vertices(const VertexShader *vs, uint32_t first, uint32_t count
     }
     return stride;
 }
+
+namespace {
+
+struct Box {
+    float mnx, mxx, mny, mxy;
+};
+
+// HUD 16:9 (with the 16:9 aspect ratio): the game lays the in-play HUD out for a 4:3 frame and the
+// anamorphic widescreen picture stretches it sideways. Squeeze x by 3/4 about the centre of the frame, with one
+// single transform for every HUD vertex: the HUD keeps its shape and stops being stretched. A transform applied
+// identically to all vertices cannot tear, duplicate or shift anything, which per element anchoring could.
+// Only 2D screen-space draws (z=0, w=1, on screen, not a fullscreen pass) at the game's 640x480 viewport and while
+// the player is being updated: menus, cutscenes and the effects passes are left alone.
+bool hud169_apply(const VertexShader *vs, uint32_t prim, uint32_t count)
+{
+    if (!g_cfg.widescreen || count < 3 || !vs) return false;
+    // Only while the player is in play, or while a hint that stops the game is up (the tutorial's "PRESS A TO
+    // CONTINUE" texts pause the player update, and the HUD must keep its 16:9 shape there too; the front end's
+    // loading screens and briefings have hint 0, so their text is never touched).
+    uint32_t game = *(const uint32_t *)(uintptr_t)0x002D45F0;
+    bool hint = game && *(const int32_t *)(uintptr_t)(game + 0x21098) == 3;
+    if (!bindings::in_play() && !hint) return false;
+    uint32_t fe = *(const uint32_t *)(uintptr_t)0x002D199C;
+    if (!fe || *(const char *)(uintptr_t)(fe + 0x3840) != 0) return false;
+    const Viewport &v = g_st.viewport;
+    if (v.X || v.Y || v.Width != 640 || v.Height != 480) return false;
+    int pos = -1;
+    for (uint32_t e = 0; e < vs->num_elements; e++)
+        if (vs->elements[e].reg == 0 && vs->elements[e].stream == 0) pos = (int)e;
+    uint32_t stride = vs->num_elements * 4;
+    if (pos < 0 || g_conv.size() < (size_t)count * stride) return false;
+    float *base = g_conv.data() + (size_t)pos * 4;
+    // Transform only the vertices that are 2D and on screen. The game hides a piece by pushing its vertices
+    // off screen (infinities); leaving those alone is invisible, while rejecting the whole draw made the HUD
+    // fall back to 4:3 for the frames in which a bar or an icon was hidden.
+    float mnx = 1e30f, mxx = -1e30f, mny = 1e30f, mxy = -1e30f;
+    bool any = false;
+    for (uint32_t i = 0; i < count; i++) {
+        const float *p = base + (size_t)i * stride;
+        if (p[2] != 0.0f || p[3] != 1.0f) continue;
+        if (!(p[0] > -4.0f && p[0] < 644.0f) || !(p[1] > -4.0f && p[1] < 484.0f)) continue;
+        any = true;
+        mnx = std::min(mnx, p[0]); mxx = std::max(mxx, p[0]);
+        mny = std::min(mny, p[1]); mxy = std::max(mxy, p[1]);
+    }
+    if (!any) return false;
+    if (mxx - mnx > 640.0f * 0.85f && mxy - mny > 480.0f * 0.85f) return false; // a fullscreen pass
+    // Corner mapping, a function of x (and gated by y) applied vertex by vertex, so it never depends on how a draw
+    // is split:
+    //   y < 90 and x <= 200 : squeeze to the left edge   -> the health panel hugs the left corner
+    //   y < 90 and x >= 440 : squeeze to the right edge  -> the ammo panel hugs the right corner
+    //   anything else       : untouched                  -> centred texts, hints and the crosshair stay as drawn
+    // Only the panels (and the seam line between them) live in the top strip, so no text is ever bent.
+    for (uint32_t i = 0; i < count; i++) {
+        float *p = base + (size_t)i * stride;
+        if (p[2] != 0.0f || p[3] != 1.0f) continue;
+        if (!(p[0] > -4.0f && p[0] < 644.0f) || !(p[1] > -4.0f && p[1] < 484.0f)) continue;
+        if (p[1] >= 90.0f) continue;
+        if (p[0] <= 200.0f) p[0] *= 0.75f;
+        else if (p[0] >= 440.0f) p[0] = 640.0f - (640.0f - p[0]) * 0.75f;
+    }
+    return true;
+}
+
+} // namespace
 
 // Linear (pitch) textures are addressed with texel coordinates on the NV2A; D3D9 wants 0..1.
 void linear_texture_scale(int stage, float *sx, float *sy)
@@ -907,9 +1049,15 @@ void __stdcall D3DDevice_DrawVerticesUP(uint32_t PrimitiveType, uint32_t VertexC
     pb_flush();
     perf::Scope perf_scope(perf::kDraw);
     DrawCtx ctx;
-    if (!begin_draw(ctx)) return;
+    g_hud_linear = hud169_precheck(VertexCount, (const uint8_t *)pVertexStreamZeroData, VertexStreamZeroStride);
+    if (!begin_draw(ctx)) {
+        g_hud_linear = false;
+        return;
+    }
+    g_hud_linear = false;
     if (ctx.path == Path::Prog) {
         uint32_t stride = convert_vertices(ctx.vs, 0, VertexCount, (const uint8_t *)pVertexStreamZeroData, VertexStreamZeroStride);
+        hud169_apply(ctx.vs, PrimitiveType, VertexCount);
         debug_draw("DrawVerticesUP", ctx, PrimitiveType, VertexCount, g_conv.data(), stride / 4);
         set_decl(host3d::dev(), decl_for(ctx.vs));
         draw_up(PrimitiveType, VertexCount, g_conv.data(), stride);
@@ -929,6 +1077,7 @@ void __stdcall D3DDevice_DrawVertices(uint32_t PrimitiveType, uint32_t StartVert
     if (!begin_draw(ctx)) return;
     if (ctx.path == Path::Prog) {
         uint32_t stride = convert_vertices(ctx.vs, StartVertex, VertexCount, nullptr, 0);
+        if (hud169_apply(ctx.vs, PrimitiveType, VertexCount)) texture_filters_linear();
         debug_draw("DrawVertices", ctx, PrimitiveType, VertexCount, g_conv.data(), stride / 4);
         set_decl(host3d::dev(), decl_for(ctx.vs));
         draw_up(PrimitiveType, VertexCount, g_conv.data(), stride);
@@ -989,6 +1138,7 @@ void __stdcall D3DDevice_DrawIndexedVertices(uint32_t PrimitiveType, uint32_t Ve
             if (pIndexData[i] > mx) mx = pIndexData[i];
         }
         uint32_t stride = convert_vertices(ctx.vs, mn, mx - mn + 1, nullptr, 0);
+        if (hud169_apply(ctx.vs, PrimitiveType, mx - mn + 1)) texture_filters_linear();
         debug_draw("DrawIndexedVertices", ctx, PrimitiveType, VertexCount, g_conv.data(), stride / 4);
         if (debug_frame_active() && !g_cfg.debug_frame_end) // single debug frames only (ranges stay fast)
             dump_packed_normal_geometry(ctx.vs, PrimitiveType, VertexCount, pIndexData, mn, mx);

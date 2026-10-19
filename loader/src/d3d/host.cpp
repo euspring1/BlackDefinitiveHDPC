@@ -32,10 +32,71 @@ WINDOWPLACEMENT g_windowed_place = {sizeof(WINDOWPLACEMENT)};
 // Mouse: raw input counts and buttons, used only while the cursor is captured (click the window; focus loss
 // releases it). The click that captures is not passed to the game.
 std::atomic<bool> g_captured{false};
+// While a menu page is up the menus own the cursor (input/bindings.cpp sets this each poll): a click there must not
+// capture the mouse, which would hide the cursor for a frame and swallow the click itself (see WM_LBUTTONDOWN).
+std::atomic<bool> g_cursor_free{false};
 std::atomic<int> g_mouse_dx, g_mouse_dy, g_wheel, g_buttons;
+// A menu click is latched when the window hears it, never polled: the input poll runs once per game frame, so a quick
+// press and release can fall entirely between two polls. Bit 0 is the left button and bit 1 the right; the held state
+// is what keeps a hold repeating.
+std::atomic<int> g_menu_press{0}, g_menu_hold{0};
+// Wheel notches while a menu page is up: the menus walk the highlight with them as the up/down arrows do
+// (input/bindings.cpp), so they are latched here and not lost between the front end's own updates.
+std::atomic<int> g_menu_wheel{0};
 bool g_hold_left; // the capturing click: masked until released
 constexpr UINT WM_APP_CAPTURE = WM_APP + 0x52; // wParam: 1 = capture, 0 = release (request_capture)
 constexpr UINT WM_APP_FULLSCREEN = WM_APP + 0x53; // wParam: 1 = fullscreen, 0 = windowed (set_fullscreen)
+constexpr UINT WM_APP_WINSIZE = WM_APP + 0x54; // wParam/lParam: client width/height, 0 = fit (set_window_size)
+int g_pending_w, g_pending_h; // RESOLUTION picked while fullscreen: applied when the window is back
+bool g_pending_size;
+
+bool is_fullscreen();
+
+// The client size of the picture's aspect that fills the desktop's work area (the task bar and the window's own
+// frame aside), in whole multiples of the aspect so the picture stays exact.
+void fit_client_size(int *w, int *h)
+{
+    RECT f = {0, 0, 0, 0};
+    AdjustWindowRect(&f, WS_OVERLAPPEDWINDOW, FALSE);
+    RECT work;
+    SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+    int avail_w = std::max(1, (int)(work.right - work.left - (f.right - f.left)));
+    int avail_h = std::max(1, (int)(work.bottom - work.top - (f.bottom - f.top)));
+    int step = g_aspect_h * 2;
+    int height = avail_h / step * step;
+    int width = height * g_aspect_w / g_aspect_h;
+    if (width > avail_w) {
+        step = g_aspect_w * 2;
+        width = avail_w / step * step;
+        height = width * g_aspect_h / g_aspect_w;
+    }
+    *w = std::max(width, 320);
+    *h = std::max(height, 240);
+}
+
+// PC SETTINGS > VIDEO > RESOLUTION: a new client size, keeping the window's place (clamped so it stays on the
+// monitor's work area). Zero means the desktop fit. Fullscreen is the whole monitor by design, so the size is
+// only remembered there and applied when the window comes back.
+void apply_window_size(int cw, int ch)
+{
+    if (!g_hwnd || is_fullscreen()) return;
+    if (cw <= 0 && ch <= 0) fit_client_size(&cw, &ch);
+    else if (ch <= 0) ch = cw * g_aspect_h / g_aspect_w;
+    else if (cw <= 0) cw = ch * g_aspect_w / g_aspect_h;
+    RECT wr;
+    GetWindowRect(g_hwnd, &wr);
+    RECT r = {0, 0, cw, ch};
+    AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
+    RECT work;
+    SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+    MONITORINFO mi = {sizeof mi};
+    if (GetMonitorInfoW(MonitorFromWindow(g_hwnd, MONITOR_DEFAULTTOPRIMARY), &mi)) work = mi.rcWork;
+    int w = r.right - r.left, h = r.bottom - r.top;
+    int x = std::min(std::max(wr.left, work.left), std::max(work.left, work.right - w));
+    int y = std::min(std::max(wr.top, work.top), std::max(work.top, work.bottom - h));
+    SetWindowPos(g_hwnd, nullptr, x, y, w, h, SWP_NOZORDER | SWP_NOOWNERZORDER);
+    logf("host: window client %dx%d", cw, ch);
+}
 
 // Borderless window over the whole monitor, or back to the window it was.
 void toggle_fullscreen()
@@ -57,6 +118,10 @@ void toggle_fullscreen()
         SetWindowPlacement(g_hwnd, &g_windowed_place);
         SetWindowPos(g_hwnd, nullptr, 0, 0, 0, 0,
                      SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        if (g_pending_size) { // RESOLUTION was chosen while fullscreen
+            g_pending_size = false;
+            apply_window_size(g_pending_w, g_pending_h);
+        }
         logf("host: windowed");
     }
 }
@@ -100,6 +165,8 @@ void clip_to_client()
 
 void capture_mouse(bool on)
 {
+    g_menu_press = 0; // a menu click never crosses into or out of play
+    g_menu_hold = 0;
     if (on == g_captured) return;
     g_captured = on;
     if (on) {
@@ -168,6 +235,16 @@ LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
             settings_save();
         }
         return 0;
+    case WM_APP_WINSIZE: // PC SETTINGS > VIDEO > RESOLUTION (fe/pc_settings.cpp)
+        if (is_fullscreen()) {
+            g_pending_w = (int)wp;
+            g_pending_h = (int)lp;
+            g_pending_size = true;
+        } else {
+            apply_window_size((int)wp, (int)lp);
+        }
+        settings_save();
+        return 0;
     case perf::WM_APP_PERF:
         capture_mouse(false);
         perf_report(h);
@@ -203,8 +280,31 @@ LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         if ((wp & 0xFFF0) == SC_KEYMENU) return 0; // Alt / F10 must not open the system menu by keyboard and stall input
         break;
     case WM_LBUTTONDOWN:
-        capture_mouse(true);
+        if (!g_cursor_free.load()) capture_mouse(true); // a menu page owns the cursor: its clicks are the menu's
+        else g_menu_press |= 1, g_menu_hold |= 1;
         return 0;
+    case WM_LBUTTONUP:
+        g_menu_hold &= ~1;
+        return 0;
+    case WM_RBUTTONDOWN:
+        if (g_cursor_free.load()) g_menu_press |= 2, g_menu_hold |= 2; // in play the right button is the aim, not a menu's
+        return 0;
+    case WM_RBUTTONUP:
+        g_menu_hold &= ~2;
+        return 0;
+    case WM_MOUSEWHEEL:
+        // A menu page owns the pointer: its notches walk the highlight. In play the wheel is a bound key
+        // (input/bindings.cpp), read through raw input, and this copy is left alone.
+        if (g_cursor_free.load() && GetForegroundWindow() == h) {
+            int d = GET_WHEEL_DELTA_WPARAM(wp);
+            g_menu_wheel += d > 0 ? 1 : d < 0 ? -1 : 0;
+            return 0;
+        }
+        break;
+    case WM_CAPTURECHANGED: // another window took the mouse: no button of ours is still held
+        g_menu_press = 0;
+        g_menu_hold = 0;
+        break;
     case WM_ACTIVATE:
         if (LOWORD(wp) == WA_INACTIVE) capture_mouse(false);
         break;
@@ -212,7 +312,9 @@ LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         capture_mouse(false);
         break;
     case WM_SETCURSOR:
-        if (g_captured && LOWORD(lp) == HTCLIENT) {
+        // The Windows cursor never shows over the window: in play it is captured (mouse look), and everywhere else
+        // the port draws its own arrow (d3d/cursor.cpp). Only a window that is not the one in front keeps it.
+        if (LOWORD(lp) == HTCLIENT && GetForegroundWindow() == g_hwnd) {
             SetCursor(nullptr);
             return TRUE;
         }
@@ -288,6 +390,7 @@ bool open_window(int width, int height, int aspect_w, int aspect_h)
     g_aspect_w = aspect_w;
     g_aspect_h = aspect_h;
     if (width > 0 && height <= 0) height = width * aspect_h / aspect_w;
+    if (height > 0 && width <= 0) width = height * aspect_w / aspect_h; // RESOLUTION: a height alone
     if (width <= 0 || height <= 0) { // largest client area of the aspect that fits the work area comfortably
         RECT work;
         SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
@@ -357,7 +460,58 @@ void set_fullscreen(bool on)
 
 bool fullscreen() { return g_hwnd && is_fullscreen(); }
 
+void set_window_size(int width, int height)
+{
+    if (g_hwnd) PostMessageW(g_hwnd, WM_APP_WINSIZE, (WPARAM)width, (LPARAM)height);
+}
+
 int mouse_buttons() { return g_captured ? g_buttons.load() : 0; }
+
+void set_cursor_free(bool on)
+{
+    if (!on) g_menu_wheel = 0; // a notch scrolled before the menus went away is not for the next visit
+    g_cursor_free = on;
+}
+
+// Wheel notches while a menu page owns the pointer (WM_MOUSEWHEEL): + = away from the user (up), - = towards it.
+int menu_wheel() { return g_menu_wheel.exchange(0); }
+
+namespace {
+// The pointer in the front end's 640x480 stage (the picture keeps the game's aspect, centred in the client area).
+// clamp: a point outside the picture goes to its edge instead of failing.
+bool pointer_in_stage(float *x, float *y, bool clamp)
+{
+    if (!g_hwnd || g_captured) return false;
+    if (GetForegroundWindow() != g_hwnd || IsIconic(g_hwnd)) return false; // only the window in front drives its menus
+    POINT p;
+    if (!GetCursorPos(&p) || !ScreenToClient(g_hwnd, &p)) return false;
+    int cw = g_win_w.load(), ch = g_win_h.load();
+    if (cw <= 0 || ch <= 0) return false;
+    int pw = cw, ph = pw * g_aspect_h / g_aspect_w;
+    if (ph > ch) {
+        ph = ch;
+        pw = ph * g_aspect_w / g_aspect_h;
+    }
+    int px = (cw - pw) / 2, py = (ch - ph) / 2;
+    if (!clamp && (p.x < px || p.y < py || p.x >= px + pw || p.y >= py + ph)) return false;
+    float sx = (float)(p.x - px) * 640.0f / (float)pw, sy = (float)(p.y - py) * 480.0f / (float)ph;
+    *x = std::clamp(sx, 0.0f, 640.0f);
+    *y = std::clamp(sy, 0.0f, 480.0f);
+    return true;
+}
+} // namespace
+
+bool cursor_stage(float *x, float *y) { return pointer_in_stage(x, y, false); }
+bool cursor_stage_any(float *x, float *y) { return pointer_in_stage(x, y, true); }
+bool cursor_free() { return g_cursor_free.load(); }
+
+bool cursor_down(int button)
+{
+    if (!g_hwnd || g_captured || GetForegroundWindow() != g_hwnd) return false;
+    int bit = 1 << (button ? 1 : 0);
+    int press = g_menu_press.fetch_and(~bit) & bit; // the press since the last poll (taken: a fast click is not lost)
+    return press != 0 || (g_menu_hold.load() & bit) != 0;
+}
 
 void mouse_take(int *dx, int *dy, int *wheel)
 {

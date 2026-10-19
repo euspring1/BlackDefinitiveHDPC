@@ -20,8 +20,24 @@ void frame_layout(RECT *frame, RECT *picture);
 // call, wheel notches (+ = away from the user), buttons bit 0-4 = left, right, middle, X1, X2.
 bool mouse_captured();
 void request_capture(bool on); // from any thread; capturing needs the window in front
+// True while a menu page is up (input/bindings.cpp, each poll): a click in the window then belongs to the menu and
+// must not capture the mouse, or the cursor would blink out and the click be taken for the capture.
+void set_cursor_free(bool on);
+// The menu cursor (the mouse is free while a menu page is up; input/bindings.cpp): where the cursor is in the
+// front end's stage (640x480, the picture keeping the game's aspect centred in the client area). False while the
+// mouse is captured or outside the picture.
+bool cursor_stage(float *x, float *y);
+// The same place, but a point outside the picture clamps to its edge: the port draws its own arrow (cursor.cpp).
+bool cursor_stage_any(float *x, float *y);
+bool cursor_free();           // a menu page owns the pointer: the port's own arrow is drawn
+bool cursor_down(int button); // 0 left, 1 right: pressed since the last poll or held
+int menu_wheel();             // wheel notches taken while a menu page owns the pointer: + = up, - = down
 void set_fullscreen(bool on);  // from any thread (PC SETTINGS > VIDEO > FULLSCREEN)
 bool fullscreen();
+// PC SETTINGS > VIDEO > RESOLUTION: the window's client size, 0 = the largest that fits the desktop (the width follows
+// from the picture's aspect when only the height is given). Fullscreen is the whole monitor: the size is remembered
+// and applied when the window comes back. From any thread.
+void set_window_size(int width, int height);
 void mouse_take(int *dx, int *dy, int *wheel);
 int mouse_buttons();
 IDirect3DDevice9 *dev();

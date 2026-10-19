@@ -34,6 +34,13 @@ bool playing_once(const uint8_t *p) { return *(const int32_t *)(p + kState) == k
 
 } // namespace
 
+bool movie_playing_once()
+{
+    if (!g_cfg.known_build) return false;
+    const uint8_t *p = player();
+    return p && playing_once(p);
+}
+
 void movies_poll(uint16_t buttons, const uint8_t analog[8], bool enter)
 {
     bool down = analog[0] > 30 || (buttons & 0x10) || enter; // A, START or Enter

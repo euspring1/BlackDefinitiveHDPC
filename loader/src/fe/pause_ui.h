@@ -9,6 +9,7 @@ constexpr int kRows = 6;
 
 void open(int bar_frames);              // PCOpen(frames of the bullet bar): the page was prepared, at its top
 void row(int row, int id, bool moved);  // PCRow(row, FEInputId 1-5, MovedCursor) from a row's list object
+bool row_is_value(int row);             // the row carries a value (a click on it sends one direction of the value)
 void back();                            // PCBack: Back below the top screen
 void refresh();                         // texts and the rows' state into the page's values
 

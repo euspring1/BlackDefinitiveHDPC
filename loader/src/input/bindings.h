@@ -41,6 +41,19 @@ bool in_play(); // the player is being updated (not a menu, pause or cutscene)
 // The menu key pressed (or repeating) at the last poll as the menus' input id, once: 1 up, 2 down, 3 left, 4 right,
 // 5 select (Enter), 6 back (Backspace); 0 none. The front end's input (fe/calls.cpp) takes it.
 int take_menu_input();
+// The page that follows the pointer reports (fe/calls.cpp, PCHover) the row it just put the focus on: the row's index
+// (-1: the pointer is on none), whether it carries a value list, the setting it is (-1: none), the row's middle and
+// its width in the picture's pixels. Such a row has no action of its own — the game's select would confirm it and back
+// out of the page — and the game's widgets only take a direction that is held, which a pointer cannot make: so the
+// port changes the value itself while the pointer drives. A slider uses the middle and the width to take the pointer's
+// place along the row.
+void menu_row(int row, bool value, int id, int mid, int width);
+// A function of the front end's own pages changed a setting and the game reported the value it handed it (fe/calls.cpp
+// fe_dispatch): a couple of steps for a list of choices, 0-100 for a slider. The port tells the two apart by it when
+// the pointer clicks the same place twice: a list stops at its ends and would answer the second click with nothing at
+// all, so the click comes back the other way (the row then flips, which is what the game's own pages carry there);
+// a slider's steps are meant to add up in the direction asked.
+void game_value_call(int value);
 bool menu_select_held(); // Enter held in a menu or movie (movies: skip)
 // Tests: --press "SECONDSs:k:Name" holds a key (black.ini spelling) for the next poll, without focus.
 void script_hold(const std::string &name);

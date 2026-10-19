@@ -73,6 +73,7 @@ IDirect3DBaseTexture9 *host_texture(Resource *r, Palette *pal); // upload/cached
 bool texture_is_replaced(IDirect3DBaseTexture9 *t);             // a PNG from textures\ (mipmapped)
 void texture_mark_dirty(const Resource *r);
 void texture_forget(const Resource *r);
+void texture_release_pack(); // before a device Reset: drop the texture pack's D3DPOOL_DEFAULT textures
 uint32_t texture_level_offset(const PixelContainer *pc, uint32_t face, uint32_t level, uint32_t *pitch, uint32_t *w,
                               uint32_t *h);
 void pixel_container_dims(const PixelContainer *pc, uint32_t *w, uint32_t *h, uint32_t *d, uint32_t *levels);

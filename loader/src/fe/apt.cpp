@@ -441,33 +441,38 @@ Bytes Movie::build()
     for (uint32_t c : characters())
         if (c && (rd(apt, c) == 5 || rd(apt, c) == 9)) walk_movie(c, items);
     Bytes cst = cst_;
-    std::vector<uint32_t> table;
+    // One table entry per script item, every item's index rewritten in the walk's order. A deduplicated table (one
+    // entry per distinct constant, which is how the game's own files share entries) was tried and passes at 6.1 MB
+    // against 4.8 MB -- but it makes the front end crash about one boot in three, on the title menu, at 0xf737e
+    // reading [0]+4 (four runs: one crash; the same build with this table: none in four). Left as is.
+    std::vector<uint32_t> table; // the constant table: type, value, type, value...
     for (size_t k = 0; k < items.size(); k++) {
         uint32_t v = rd(apt, items[k]);
+        uint32_t type, value;
         if (v < consts_.size()) {
-            table.push_back(consts_[v].first);
-            table.push_back(consts_[v].second);
+            type = consts_[v].first;
+            value = consts_[v].second;
         } else if (v - consts_.size() < new_.size()) {
             const Value &n = new_[v - consts_.size()];
+            type = n.type;
+            value = n.raw;
             if (n.type == 1) {
-                table.push_back(1);
-                table.push_back((uint32_t)cst.size());
+                value = (uint32_t)cst.size();
                 cst.insert(cst.end(), n.text.begin(), n.text.end());
                 cst.push_back(0);
-            } else {
-                table.push_back(n.type);
-                table.push_back(n.raw);
             }
         } else {
             throw Error("a script item refers to no constant");
         }
-        wr(apt, items[k], (uint32_t)k);
+        table.push_back(type);
+        table.push_back(value);
+        wr(apt, items[k], (uint32_t)(table.size() / 2 - 1));
     }
     pad(cst, 4);
     uint32_t tpos = (uint32_t)cst.size();
     cst.resize(cst.size() + 4 * table.size());
     if (!table.empty()) memcpy(cst.data() + tpos, table.data(), 4 * table.size());
-    wr(cst, 0x18, (uint32_t)items.size());
+    wr(cst, 0x18, (uint32_t)(table.size() / 2));
     wr(cst, 0x1C, tpos);
     pad(apt, 16);
     Bytes hdr = hdr_;

@@ -15,7 +15,8 @@
 // FUN_001EE820 at 0x1EE97C or 0x1EEB2B (FUN_00176F60, with the game's flag 0x2F3C44 set around it). Made for 70 degrees, they
 // shrink and their animations show their ends at a wider FOV, so that call goes through a thunk that marks the
 // list's draws, and the translated vertex shaders scale their clip-space x/y (fov_viewmodel_scale, constant c200)
-// so they project as with the game's own FOV (70 / zoom); depth stays, so clipping and sorting do not change.
+// so they project as with viewmodel_fov / zoom (default 70: the game's own FOV); depth stays, so clipping and
+// sorting do not change.
 // The muzzle flash is not on the gun in the original either: it sits on the aim line near the screen centre.
 #include "fov.h"
 
@@ -60,16 +61,29 @@ const Site kSites[] = {
 
 } // namespace
 
-void fov_set(float degrees) { g_fov_deg = std::clamp(degrees, 50.0f, 120.0f); }
+void fov_set(float degrees)
+{
+    g_fov_deg = std::clamp(degrees, 50.0f, 120.0f);
+    // While playing, the game rewrites the camera's field of view every frame (the patched loads above), so
+    // pointing the constant here is enough. Paused, the player update does not run and the camera keeps the
+    // value it had: set it right away too, so the world behind the pause menu follows the slider at once
+    // (PC SETTINGS > VIDEO). Cutscenes blend their own authored values, so only a change made in a menu writes.
+    uint32_t renderer = *(const uint32_t *)(uintptr_t)0x002D12B8;
+    if (renderer) *(float *)(uintptr_t)(renderer + 0x750) = g_fov_deg;
+}
 
 float fov_viewmodel_scale()
 {
-    if (!g_fov_viewmodel || std::fabs(g_fov_deg - 70.0f) < 0.01f) return 1.0f;
+    if (!g_fov_viewmodel) return 1.0f;
+    // The gun and hands project as with viewmodel_fov / zoom (default 70: the game's own, exactly the old
+    // behaviour). viewmodel_fov == the camera's FOV follows the camera; below it the gun grows, above it shrinks.
+    float vm = std::clamp(g_cfg.viewmodel_fov, 50.0f, 120.0f);
+    if (std::fabs(g_fov_deg - 70.0f) < 0.01f && std::fabs(vm - 70.0f) < 0.01f) return 1.0f;
     uint32_t renderer = *(const uint32_t *)(uintptr_t)0x002D12B8;
     if (!renderer) return 1.0f;
     float now = *(const float *)(uintptr_t)(renderer + 0x750); // this frame's FOV: the setting / zoom
     if (!(now > 1.0f && now < 170.0f)) return 1.0f;
-    float game = now * 70.0f / g_fov_deg; // what the game would use: 70 / zoom
+    float game = now * vm / g_fov_deg; // what the gun is made for: viewmodel_fov / zoom
     const float half = 3.14159265f / 360.0f;
     return std::tan(now * half) / std::tan(game * half);
 }
@@ -95,5 +109,6 @@ void install_fov_patch()
             logf("fov: the first-person list call at 0x%08x does not match; the gun follows the FOV there", at);
         }
     }
-    logf("fov: field of view in play %.0f degrees (horizontal; the game's is 70)", g_fov_deg);
+    logf("fov: field of view in play %.0f degrees (horizontal; the game's is 70), viewmodel %.0f", g_fov_deg,
+         std::clamp(g_cfg.viewmodel_fov, 50.0f, 120.0f));
 }
