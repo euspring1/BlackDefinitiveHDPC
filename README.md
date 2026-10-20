@@ -39,6 +39,7 @@ game.**
 | Input | PC SETTINGS > INPUT: **MOUSE/KEYBOARD** (default, prompts show your keys) or **CONTROLLER** (prompts and menus show the controller's buttons), from the next start. |
 | Camera and effects | Camera shake on explosions (on by default) and the reload blur (off by default) can be turned on or off in PC SETTINGS > MODS. |
 | V-Sync | Optional, in PC SETTINGS > MODS (off by default). |
+| Saved games | Use a saved game from an Xbox (or from another language of the game): put its folder in `port\savedata\Partition1\UDATA\45410083\` (the folder with `SaveMeta.xbx` and the profile file inside). At the next start the port signs it again for the PC and, if it was made in another language ("Profile" / "Perfil"), renames it to the language being played, so the game loads it. |
 
 Plus everything of the base port: any render resolution, anti-aliasing, widescreen, adjustable field of view, mouse
 look, bindable keys, XInput controllers, borderless fullscreen, settings in the game's own menus.
