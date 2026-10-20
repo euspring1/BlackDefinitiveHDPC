@@ -108,7 +108,7 @@ own texture there. PC SETTINGS > MODS > TEXTURES turns the pack on or off (from 
 | Change firing mode | Z |
 | Toggle suppressor | T |
 | Health pack | X |
-| Show objectives | Space |
+| Show objectives | Tab |
 | Pause | Esc |
 
 Menus: arrow keys, Enter to confirm, Backspace to go back, or the mouse (left click confirms, right click goes back,

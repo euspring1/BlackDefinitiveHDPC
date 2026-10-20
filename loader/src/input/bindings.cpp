@@ -65,7 +65,7 @@ const Action kActions[] = {
     {"look_up", L"Look up", 7, {0, 0}},
     {"look_down", L"Look down", 8, {0, 0}},
     {"pause", L"Pause", 25, {VK_ESCAPE, 0}},
-    {"objectives", L"Show objectives", 36, {VK_SPACE, 0}},
+    {"objectives", L"Show objectives", 36, {VK_TAB, 0}},
     // The port's own: take the first / second of the two weapons the player carries (presses "next weapon" when
     // the other one is in hand; see weapon_slot_press).
     {"weapon_1", L"Weapon 1", 14, {'1', 0}},
