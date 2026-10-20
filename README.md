@@ -15,7 +15,7 @@ parts of the Xbox it talks to (kernel, Direct3D 8, DirectSound, controller libra
 | Area | Improvement |
 |---|---|
 | Frame rate | 30, 60, **120**, 144, 165 or 240 fps (default **120**). Frame pacing rebuilt so high rates no longer run in slow motion; short waits stay accurate even on PCs with coarse system timers. |
-| Crosshair | **HD crosshair**: the HUD texture rebuilt at 4x from your own game files with a sharp dot (white disc, black outline), mipmapped so the outline never flickers away. Colours set in `black.ini`: **green** normally, **blood red** over an enemy. |
+| Crosshair | **HD crosshair**: the HUD texture rebuilt at 4x from your own game files with a sharp dot (white disc, black outline), mipmapped so the outline never flickers away. Colours set in `black.ini`: **green** normally, **blood red** over an enemy, and **black** over an object that can explode (as in the original game). |
 | Aiming | **Hold to aim** (aim while the button is held) or the original toggle, in PC SETTINGS > CONTROLS > AIM. |
 | Aim assist | AUTO-AIM: OFF, ON or **CONTROLLER ONLY** (default), in PC SETTINGS > CONTROLS: the pull towards enemies works with a controller and switches off as soon as the keyboard or mouse is used. |
 | Crouch | **Hold to crouch** (crouch while Ctrl is held), whatever the game profile says, in PC SETTINGS > CONTROLS > CROUCH. |
