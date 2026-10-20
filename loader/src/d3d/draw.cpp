@@ -21,6 +21,9 @@
 #include <unordered_map>
 #include <vector>
 
+int kmem_written_since(const void *p, uint32_t bytes, uint32_t since); // kernel/k_memory.cpp
+uint32_t kmem_epoch();
+
 namespace xd3d {
 
 IDirect3DTexture9 *rt_texture_for(const PixelContainer *tex, uint32_t draw_serial, bool linear); // device.cpp
@@ -746,12 +749,34 @@ void linear_texture_scale(int stage, float *sx, float *sy)
     *sy = 1.0f / (float)h;
 }
 
-// All 200 registers on every draw (~1.3 ms a frame in busy scenes). Sending only the registers that changed
-// since the last upload broke the picture: the device then held values that were never sent to those
-// registers (seen with GetVertexShaderConstantF), not explained by the shaders' def constants; not solved yet.
-void upload_vs_constants(IDirect3DDevice9 *d)
+// The registers the device holds, as last sent, and the shader they were sent with. Sending only the registers that
+// changed broke the picture once: the device then held values that were never sent to those registers (seen with
+// GetVertexShaderConstantF), most likely a shader's def constants landing there when shaders are switched. So the
+// whole set goes again whenever the shader is another one (or forget_sent_shaders ran: fullscreen passes, Reset),
+// and only the changed run of registers while the same shader draws on (sending all 192 on every draw was ~1 ms a
+// frame in busy scenes).
+float g_vs_last[201][4];
+IDirect3DVertexShader9 *g_vs_last_for;
+
+void upload_vs_constants(IDirect3DDevice9 *d, IDirect3DVertexShader9 *vs)
 {
-    d->SetVertexShaderConstantF(0, &g_st.vs_constants[0][0], 192);
+    bool full = g_vs_last_for != vs;
+    if (full) {
+        d->SetVertexShaderConstantF(0, &g_st.vs_constants[0][0], 192);
+        memcpy(g_vs_last, g_st.vs_constants, 192 * 16);
+        g_vs_last_for = vs;
+    } else {
+        int lo = -1, hi = -1;
+        for (int i = 0; i < 192; i++)
+            if (memcmp(g_vs_last[i], g_st.vs_constants[i], 16)) {
+                if (lo < 0) lo = i;
+                hi = i;
+            }
+        if (lo >= 0) {
+            d->SetVertexShaderConstantF(lo, &g_st.vs_constants[lo][0], hi - lo + 1);
+            memcpy(g_vs_last[lo], g_st.vs_constants[lo], (hi - lo + 1) * 16);
+        }
+    }
     float k[36] = {};
     host_viewport_transform(k, k + 4);
     for (int s = 0; s < 4; s++) {
@@ -771,7 +796,10 @@ void upload_vs_constants(IDirect3DDevice9 *d)
     }
     k[32] = k[33] = fov_viewmodel_scale(); // c200: the first-person gun keeps the game's FOV
     k[34] = k[35] = 1.0f;
-    d->SetVertexShaderConstantF(192, k, 9);
+    if (full || memcmp(g_vs_last[192], k, sizeof k)) {
+        d->SetVertexShaderConstantF(192, k, 9);
+        memcpy(g_vs_last[192], k, sizeof k);
+    }
 }
 
 // Fixed-function path: express the same scaling as a texture transform (when the game sets none).
@@ -919,6 +947,7 @@ void forget_sent_shaders()
 {
     g_ps_sent = (IDirect3DPixelShader9 *)~0u;
     g_vs_sent = (IDirect3DVertexShader9 *)~0u;
+    g_vs_last_for = nullptr; // the constants go whole again too
     g_decl_sent = nullptr;
     g_fvf_sent = ~0u;
 }
@@ -959,7 +988,7 @@ bool begin_draw(DrawCtx &ctx)
     } else if (VertexShader *vs = vs_from_handle(h)) {
         if (IDirect3DVertexShader9 *hv = vs_host_shader(vs)) {
             set_vs(d, hv);
-            upload_vs_constants(d);
+            upload_vs_constants(d, hv);
             ctx.path = Path::Prog;
             ctx.vs = vs;
         }
@@ -1019,7 +1048,244 @@ const uint8_t *stream_data(uint32_t stream)
     return vb ? (const uint8_t *)phys_to_virt(vb->Data) : nullptr;
 }
 
+// ---- converted vertices kept on the graphics card ----
+// Most of the world is drawn from vertex data the game does not touch between frames, yet every draw converted its
+// vertices to float4s (convert_vertices) and handed them to DrawIndexedPrimitiveUP, which copies them again: up to
+// 13 MB a frame at long draw distances. A draw's converted vertices are kept in a managed vertex buffer, keyed by the
+// shader's layout and the source ranges, and drawn from there for as long as the write watch (kernel/k_memory.cpp)
+// shows those ranges unwritten. Data the game rewrites every time (particles, skinned meshes on the CPU) is noticed
+// and goes the old way, as do draws that may hold 2D HUD vertices (hud169_apply changes those after conversion).
+struct VbKey {
+    const VertexShader *vs;
+    uint32_t layout; // the elements' hash: a shader object can be freed and its address used again
+    uint32_t mn, count;
+    const uint8_t *base[4];
+    uint32_t stride[4];
+    bool operator==(const VbKey &o) const { return !memcmp(this, &o, sizeof *this); }
+};
+struct VbKeyHash {
+    size_t operator()(const VbKey &k) const
+    {
+        const uint32_t *w = (const uint32_t *)&k;
+        uint32_t h = 2166136261u;
+        for (size_t i = 0; i < sizeof k / 4; i++) h = (h ^ w[i]) * 16777619u;
+        return h;
+    }
+};
+struct VbEntry {
+    IDirect3DVertexBuffer9 *vb = nullptr;
+    uint32_t written = 0;    // write-watch epoch the conversion matches
+    uint32_t used = 0;       // the frame it was last drawn in
+    uint32_t rewrites = 0;   // conversions in a row because the data was written: dynamic data past a few
+    bool uncacheable = false;
+};
+std::unordered_map<VbKey, VbEntry, VbKeyHash> g_vbs;
+size_t g_vb_bytes; // managed vertex memory held
+constexpr size_t kVbBudget = 256u << 20;
+constexpr uint32_t kVbDynamic = 3;
+IDirect3DIndexBuffer9 *g_ib;      // dynamic index ring
+constexpr uint32_t kIbIndices = 1u << 20;
+uint32_t g_ib_at;
+
+uint32_t layout_hash(const VertexShader *vs)
+{
+    uint32_t h = 2166136261u;
+    for (uint32_t i = 0; i < vs->num_elements; i++) {
+        const VertexElement &e = vs->elements[i];
+        uint32_t v = e.stream | e.reg << 8 | e.xtype << 16;
+        h = (h ^ v) * 16777619u;
+        h = (h ^ e.offset) * 16777619u;
+    }
+    return h ^ vs->num_elements;
+}
+
+// The key of a draw of vertices [mn, mn + count): false if its sources cannot be watched (more than 4 streams,
+// immediate data).
+bool vb_key(const VertexShader *vs, uint32_t mn, uint32_t count, VbKey &k)
+{
+    memset(&k, 0, sizeof k);
+    k.vs = vs;
+    k.layout = layout_hash(vs);
+    k.mn = mn;
+    k.count = count;
+    int n = 0;
+    for (uint32_t e = 0; e < vs->num_elements; e++) {
+        uint32_t s = vs->elements[e].stream;
+        const uint8_t *b = stream_data(s);
+        if (!b) return false;
+        uint32_t st = g_st.streams[s].stride ? g_st.streams[s].stride : vs->stream_stride[s];
+        int i = 0;
+        while (i < n && !(k.base[i] == b && k.stride[i] == st)) i++;
+        if (i == n) {
+            if (n == 4) return false;
+            k.base[n] = b;
+            k.stride[n] = st;
+            n++;
+        }
+    }
+    return n > 0;
+}
+
+// 1 if any source range was written after `since`, 0 if none, -1 if unknown
+int vb_written(const VbKey &k, uint32_t since)
+{
+    int any = 0;
+    for (int i = 0; i < 4 && k.base[i]; i++) {
+        uint32_t span = k.count * k.stride[i];
+        int w = kmem_written_since(k.base[i] + (size_t)k.mn * k.stride[i], span ? span : 1, since);
+        if (w < 0) return -1;
+        any |= w;
+    }
+    return any;
+}
+
+// The converted vertices hold a 2D screen vertex hud169_apply could move: z 0, w 1, on the 640x480 screen.
+bool may_be_hud(const VertexShader *vs, uint32_t count)
+{
+    int pos = -1;
+    for (uint32_t e = 0; e < vs->num_elements; e++)
+        if (vs->elements[e].reg == 0 && vs->elements[e].stream == 0) pos = (int)e;
+    if (pos < 0) return false;
+    uint32_t stride = vs->num_elements * 4;
+    const float *base = g_conv.data() + (size_t)pos * 4;
+    for (uint32_t i = 0; i < count; i++) {
+        const float *p = base + (size_t)i * stride;
+        if (p[2] == 0.0f && p[3] == 1.0f && p[0] > -4.0f && p[0] < 644.0f && p[1] > -4.0f && p[1] < 484.0f) return true;
+    }
+    return false;
+}
+
+void vb_trim(uint32_t frame)
+{
+    for (auto it = g_vbs.begin(); it != g_vbs.end();) {
+        VbEntry &e = it->second;
+        if (frame - e.used > 600 || g_vb_bytes > kVbBudget) {
+            if (e.vb) {
+                D3DVERTEXBUFFER_DESC d;
+                e.vb->GetDesc(&d);
+                g_vb_bytes -= d.Size;
+                e.vb->Release();
+            }
+            it = g_vbs.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+// Indices into the ring (quads made into triangles); the first index's position, or -1.
+int ib_put(uint32_t xprim, uint32_t nidx, const uint16_t *idx, uint32_t prims)
+{
+    IDirect3DDevice9 *d = host3d::dev();
+    if (!g_ib && FAILED(d->CreateIndexBuffer(kIbIndices * 2, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, D3DFMT_INDEX16,
+                                             D3DPOOL_DEFAULT, &g_ib, nullptr)))
+        return -1;
+    bool quads = xprim == XPT_QUADLIST;
+    uint32_t n = quads ? prims * 3 : nidx;
+    if (n > kIbIndices) return -1;
+    DWORD flags = D3DLOCK_NOOVERWRITE;
+    if (g_ib_at + n > kIbIndices) {
+        g_ib_at = 0;
+        flags = D3DLOCK_DISCARD;
+    }
+    void *p = nullptr;
+    if (FAILED(g_ib->Lock(g_ib_at * 2, n * 2, &p, flags))) return -1;
+    if (quads) {
+        uint16_t *o = (uint16_t *)p;
+        for (uint32_t q = 0; q < nidx / 4; q++, o += 6) {
+            const uint16_t *s = idx + q * 4;
+            o[0] = s[0]; o[1] = s[1]; o[2] = s[2]; o[3] = s[0]; o[4] = s[2]; o[5] = s[3];
+        }
+    } else {
+        memcpy(p, idx, n * 2);
+    }
+    g_ib->Unlock();
+    int at = (int)g_ib_at;
+    g_ib_at += n;
+    return at;
+}
+
+// Draws indexed vertices [mn, mx] of the current streams from the cache; false: not cached, the caller converts.
+bool draw_indexed_cached(const VertexShader *vs, uint32_t xprim, uint32_t nidx, const uint16_t *idx, uint32_t mn, uint32_t mx)
+{
+    uint32_t count = mx - mn + 1;
+    VbKey k;
+    if (!vb_key(vs, mn, count, k)) return false;
+    uint32_t frame = g_frame_count.load(std::memory_order_relaxed);
+    VbEntry &e = g_vbs[k];
+    if (e.uncacheable) {
+        e.used = frame;
+        return false;
+    }
+    uint32_t stride = 16 * vs->num_elements;
+    int w = e.vb ? vb_written(k, e.written) : 1;
+    if (w < 0) {
+        e.uncacheable = true;
+        return false;
+    }
+    if (w) { // new, or its data was written: convert into the buffer
+        if (e.vb && ++e.rewrites > kVbDynamic) { // rewritten every time: dynamic data, not worth a buffer
+            D3DVERTEXBUFFER_DESC d;
+            e.vb->GetDesc(&d);
+            g_vb_bytes -= d.Size;
+            e.vb->Release();
+            e.vb = nullptr;
+            e.uncacheable = true;
+            return false;
+        }
+        uint32_t epoch = kmem_epoch();
+        vb_written(k, epoch); // take in the writes so far: the conversion below reads them
+        convert_vertices(vs, mn, count, nullptr, 0);
+        if (may_be_hud(vs, count)) {
+            e.uncacheable = true;
+            return false;
+        }
+        IDirect3DDevice9 *d = host3d::dev();
+        if (!e.vb) {
+            if (FAILED(d->CreateVertexBuffer(count * stride, D3DUSAGE_WRITEONLY, 0, D3DPOOL_MANAGED, &e.vb, nullptr))) {
+                e.vb = nullptr;
+                e.uncacheable = true;
+                return false;
+            }
+            g_vb_bytes += count * stride;
+            if (g_vb_bytes > kVbBudget) vb_trim(frame);
+        }
+        void *p = nullptr;
+        if (FAILED(e.vb->Lock(0, 0, &p, 0))) return false;
+        memcpy(p, g_conv.data(), (size_t)count * stride);
+        e.vb->Unlock();
+        e.written = kmem_epoch();
+    } else {
+        e.rewrites = 0;
+    }
+    e.used = frame;
+    Prim pr = conv_prim(xprim, nidx);
+    if (!pr.count) return true;
+    int start = ib_put(xprim, nidx, idx, pr.count);
+    if (start < 0) return false;
+    IDirect3DDevice9 *d = host3d::dev();
+    d->SetStreamSource(0, e.vb, 0, stride);
+    d->SetIndices(g_ib);
+    perf::add_draw(count, 0);
+    d->DrawIndexedPrimitive(pr.type, -(INT)mn, mn, count, (UINT)start, pr.count);
+    static uint32_t trimmed;
+    if (frame - trimmed >= 600) {
+        trimmed = frame;
+        vb_trim(frame);
+    }
+    return true;
+}
+
 } // namespace
+
+// Before a device Reset: the index ring is a D3DPOOL_DEFAULT buffer (the vertex buffers are managed and stay).
+void vbcache_release_default()
+{
+    if (IDirect3DDevice9 *d = host3d::dev()) d->SetIndices(nullptr);
+    if (g_ib) g_ib->Release();
+    g_ib = nullptr;
+    g_ib_at = 0;
+}
 
 // Pre-transformed (XYZRHW) vertices carry Xbox screen pixels, but host render targets are scale_x/y() times
 // larger: copy vertices [first, first+count) with x/y scaled. Returns a pointer usable with the original
@@ -1137,6 +1403,9 @@ void __stdcall D3DDevice_DrawIndexedVertices(uint32_t PrimitiveType, uint32_t Ve
             if (pIndexData[i] < mn) mn = pIndexData[i];
             if (pIndexData[i] > mx) mx = pIndexData[i];
         }
+        set_decl(host3d::dev(), decl_for(ctx.vs));
+        if (!debug_frame_active() && g_cfg.vertex_cache && draw_indexed_cached(ctx.vs, PrimitiveType, VertexCount, pIndexData, mn, mx))
+            return;
         uint32_t stride = convert_vertices(ctx.vs, mn, mx - mn + 1, nullptr, 0);
         if (hud169_apply(ctx.vs, PrimitiveType, mx - mn + 1)) texture_filters_linear();
         debug_draw("DrawIndexedVertices", ctx, PrimitiveType, VertexCount, g_conv.data(), stride / 4);

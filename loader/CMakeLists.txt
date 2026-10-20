@@ -28,6 +28,7 @@ add_library(blackrt SHARED
   src/shake.cpp
   src/effects.cpp
   src/drawdist.cpp
+  src/cpu_guard.cpp
   src/saveimport.cpp
   src/reticle.cpp
   src/audio_defaults.cpp

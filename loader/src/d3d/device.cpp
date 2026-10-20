@@ -1232,6 +1232,7 @@ void recover_device(bool force)
     release_host_targets();
     for (DWORD s = 0; s < 4; s++) d->SetTexture(s, nullptr); // the texture pack's textures are D3DPOOL_DEFAULT too
     texture_release_pack();
+    vbcache_release_default();
     d->SetRenderTarget(0, g_host_backbuffer);
     d->SetDepthStencilSurface(g_host_depth);
     if (g_host_backbuffer) g_host_backbuffer->Release();

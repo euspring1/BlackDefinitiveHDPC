@@ -10,6 +10,7 @@
 #include "fov.h"
 #include "saveimport.h"
 #include "shake.h"
+#include "cpu_guard.h"
 #include "drawdist.h"
 #include "effects.h"
 #include "lang.h"
@@ -231,7 +232,8 @@ bool parse_args()
             std::wstring v;
             if (!next(v)) return false;
             g_cfg.draw_distance = std::clamp(_wtoi(v.c_str()), 1, 16);
-        } else if (a == L"--controller") { g_cfg.input_pad = true; settings_mark_cli("input"); }
+        } else if (a == L"--no-vertex-cache") g_cfg.vertex_cache = false;
+        else if (a == L"--controller") { g_cfg.input_pad = true; settings_mark_cli("input"); }
         else if (a == L"--no-textures") { g_cfg.textures = false; settings_mark_cli("textures"); }
         else if (a == L"--game-override") {
             if (!next(g_cfg.game_override)) return false;
@@ -413,6 +415,7 @@ void pin_to_one_cpu()
     if (sibling && (proc & ~core)) SetProcessAffinityMask(GetCurrentProcess(), proc & ~sibling);
     logf("cpu: game threads pinned to CPU mask 0x%lx like the single-core Xbox%s; host threads use the others; --game-cpu N to "
          "choose, --multicore to disable", (unsigned long)one, sibling && (proc & ~core) ? " (its hyperthread sibling left idle)" : "");
+    cpu_guard_start(); // the threads the driver and Windows start take the process mask: moved off it as they appear
 }
 
 } // namespace

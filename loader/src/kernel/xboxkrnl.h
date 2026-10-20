@@ -166,6 +166,10 @@ void kfile_add_symlink(const std::string &name, const std::string &target);
 bool kmem_init();
 constexpr uint32_t CONTIGUOUS_BASE = 0x80000000;
 constexpr uint32_t CONTIGUOUS_SIZE = 64u << 20;
+// Writes to the contiguous memory (Windows write watch): 1 if [p, p + bytes) was written after epoch `since`, 0 if
+// not, -1 if unknown (outside the block, or no write watch). kmem_epoch() is the epoch to keep after a look.
+int kmem_written_since(const void *p, uint32_t bytes, uint32_t since);
+uint32_t kmem_epoch();
 
 // Kernel timers / DPCs (k_dpc.cpp)
 bool kdpc_init();

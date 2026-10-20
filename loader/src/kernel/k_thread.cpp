@@ -121,13 +121,15 @@ NTSTATUS __stdcall KeDelayExecutionThread(uint8_t WaitMode, BOOLEAN Alertable, L
     // lets its other threads run) yield the CPU until the time is up instead of sleeping: a host sleep wakes on the
     // system timer, which on some PCs is 7-20 ms late even for 1 ms (measured: Sleep(1) 21 ms, a high-resolution
     // waitable timer 8 ms), and that capped 240 fps near 130. SwitchToThread runs the game's other threads first.
+    // The delay is there for those threads only: once none of them is waiting to run (SwitchToThread finds nothing),
+    // the rest of the time would be spent spinning on the game's CPU, about 0.3 ms a frame, so it ends there.
     if (g_cfg.fps > 60 && Interval && Interval->QuadPart < 0 && Interval->QuadPart >= -50000) { // up to 5 ms
         LARGE_INTEGER f, t0, t;
         QueryPerformanceFrequency(&f);
         QueryPerformanceCounter(&t0);
         const int64_t ticks = -Interval->QuadPart * f.QuadPart / 10000000;
         do {
-            if (!SwitchToThread()) YieldProcessor();
+            if (!SwitchToThread()) break;
             QueryPerformanceCounter(&t);
         } while (t.QuadPart - t0.QuadPart < ticks);
         return 0;

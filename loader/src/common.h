@@ -106,6 +106,7 @@ struct Config {
     bool known_build = false;  // the XBE is the NTSC-U build the address tables are for (main.cpp)
     std::wstring game_override; // --game-override: files there replace the game's of the same relative path
     std::wstring menu_cache;    // the port's rebuilt front-end files (fe/pages.cpp), served like --game-override after it
+    bool vertex_cache = true;   // converted vertices kept on the card while unwritten (d3d/draw.cpp; --no-vertex-cache)
     bool pc_menus = true;       // build the in-game PC SETTINGS pages (--no-pc-menus: the game's own menus only)
     std::wstring press_file;    // --press-file (tests): presses and screenshot requests appended by a driver
     int fps = 120;             // 120 (default), 60: swap interval TWO paced as ONE, world step 1/60 s, weapon refire kept at

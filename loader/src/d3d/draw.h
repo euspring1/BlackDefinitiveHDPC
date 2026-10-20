@@ -17,6 +17,7 @@ void forget_sent_shaders();
 // After a device Reset: Direct3D is back at its defaults, so every state, texture and shader the draws remember
 // having sent is unknown again.
 void forget_sent_state();
+void vbcache_release_default(); // before a device Reset: the vertex cache's D3DPOOL_DEFAULT index ring
 
 // Save the host back buffer as a PNG (used by --screenshot).
 bool save_screenshot(const wchar_t *path);

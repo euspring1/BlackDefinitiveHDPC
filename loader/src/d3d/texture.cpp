@@ -19,6 +19,9 @@
 #include <unordered_map>
 #include <vector>
 
+int kmem_written_since(const void *p, uint32_t bytes, uint32_t since); // kernel/k_memory.cpp
+uint32_t kmem_epoch();
+
 namespace xd3d {
 namespace {
 
@@ -30,6 +33,7 @@ struct Entry {
     bool dirty = false;
     uint32_t checked_frame = ~0u; // the frame the contents were last checked (hashing on every bind cost ~8 ms a frame)
     uint32_t stable = 0;          // consecutive checks without a change
+    uint32_t written = 0;         // the write-watch epoch the texels were last known at (kmem_written_since)
     bool replaced = false;        // tex is a PNG from textures\ (see replacement), not the game's texels
     bool pack = false;            // tex is from the texture pack (texpack.cpp; D3DPOOL_DEFAULT)
 };
@@ -610,17 +614,31 @@ IDirect3DBaseTexture9 *host_texture(Resource *r, Palette *pal)
     EnterCriticalSection(&g_cs);
     Entry &e = g_cache[r];
     uint32_t frame = g_frame_count.load(std::memory_order_relaxed);
+    const void *palptr = pal ? phys_to_virt(pal->Data) : nullptr;
+    // The palette matters to P8 textures only: the game leaves a palette set while it draws with other formats, and
+    // comparing it there made every bind of them a full check (about 200 hashes a frame).
+    bool pal_same = fmt_of(pc) != XFMT_P8 || e.palette == palptr;
     bool skip = e.checked_frame == frame || (e.stable >= kStableChecks && ((frame + ((uintptr_t)r >> 6)) & 15) != 0);
-    if (skip && e.tex && !e.dirty && e.data == pc->Data && e.format == pc->Format && e.size == pc->Size &&
-        e.palette == (pal ? phys_to_virt(pal->Data) : nullptr)) {
+    if (skip && e.tex && !e.dirty && e.data == pc->Data && e.format == pc->Format && e.size == pc->Size && pal_same) {
         IDirect3DBaseTexture9 *t = e.tex;
         LeaveCriticalSection(&g_cs);
         return t;
     }
     e.checked_frame = frame;
     uint32_t bytes = total_bytes(pc);
+    // Unwritten texels (and palette) since the last look: known unchanged without reading them.
+    bool same = e.tex && !e.dirty && e.data == pc->Data && e.format == pc->Format && e.size == pc->Size && pal_same;
+    if (same) {
+        int w = kmem_written_since(phys_to_virt(pc->Data), bytes, e.written);
+        if (w == 0 && fmt_of(pc) == XFMT_P8 && palptr) w = kmem_written_since(palptr, 1024, e.written);
+        if (w == 0) {
+            e.written = kmem_epoch();
+            IDirect3DBaseTexture9 *t = e.tex;
+            LeaveCriticalSection(&g_cs);
+            return t;
+        }
+    }
     uint32_t hash = sample_hash((const uint8_t *)phys_to_virt(pc->Data), bytes);
-    const void *palptr = pal ? phys_to_virt(pal->Data) : nullptr;
     if (fmt_of(pc) == XFMT_P8 && pal) hash ^= sample_hash((const uint8_t *)palptr, 1024);
     bool same_shape = e.tex && !e.replaced && e.data == pc->Data && e.format == pc->Format && e.size == pc->Size;
     bool stale = !same_shape || e.dirty || e.hash != hash || (fmt_of(pc) == XFMT_P8 && e.palette != palptr);
@@ -680,6 +698,7 @@ IDirect3DBaseTexture9 *host_texture(Resource *r, Palette *pal)
                  (pc->Format & FMT_CUBEMAP) ? " cube" : "", pc->Data);
         }
     }
+    e.written = kmem_epoch(); // the texels as hashed / uploaded now; later writes show as a newer epoch
     IDirect3DBaseTexture9 *t = e.tex;
     LeaveCriticalSection(&g_cs);
     return t;

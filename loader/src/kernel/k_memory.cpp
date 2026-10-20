@@ -9,6 +9,7 @@
 
 #include <map>
 #include <mutex>
+#include <vector>
 
 namespace {
 
@@ -31,21 +32,64 @@ uint32_t strip_cache_bits(uint32_t protect) { return protect & ~(0x200u | 0x400u
 
 } // namespace
 
+// Write watch over the contiguous memory (textures and the likes live there): Windows keeps which pages were written
+// since the last look, so a texture is known unchanged without reading it. Each look resets the pages it reports
+// and stamps them with a new epoch, so ranges that share a page each still see the write.
+namespace {
+std::mutex g_watch_mutex;
+bool g_watch;
+uint32_t g_epoch = 1;
+std::vector<uint32_t> g_page_epoch; // per page of the block: the epoch of the last write seen
+std::vector<void *> g_written;      // GetWriteWatch's output
+} // namespace
+
 bool kmem_init()
 {
     g_pool_heap = HeapCreate(0, 0, 0);
-    g_contig_base = (uint8_t *)VirtualAlloc((void *)(uintptr_t)CONTIGUOUS_BASE, CONTIGUOUS_SIZE, MEM_RESERVE | MEM_COMMIT,
-                                            PAGE_EXECUTE_READWRITE);
+    g_contig_base = (uint8_t *)VirtualAlloc((void *)(uintptr_t)CONTIGUOUS_BASE, CONTIGUOUS_SIZE,
+                                            MEM_RESERVE | MEM_COMMIT | MEM_WRITE_WATCH, PAGE_EXECUTE_READWRITE);
+    g_watch = g_contig_base != nullptr;
     if (!g_contig_base) {
         logf("memory: could not reserve contiguous memory at 0x%08x (error %lu); using any address", CONTIGUOUS_BASE,
              GetLastError());
         g_contig_base = (uint8_t *)VirtualAlloc(nullptr, CONTIGUOUS_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
         if (!g_contig_base) return false;
     }
+    if (g_watch) {
+        g_page_epoch.assign(CONTIGUOUS_SIZE / PAGE, 0);
+        g_written.resize(CONTIGUOUS_SIZE / PAGE);
+    }
     g_contig_free[CONTIG_LOW_RESERVED] = CONTIGUOUS_SIZE - CONTIG_LOW_RESERVED - GPU_INSTANCE_SIZE;
     g_contig_used[CONTIGUOUS_SIZE - GPU_INSTANCE_SIZE] = GPU_INSTANCE_SIZE;
-    logf("memory: contiguous RAM %p-%p (%u MB)", g_contig_base, g_contig_base + CONTIGUOUS_SIZE, CONTIGUOUS_SIZE >> 20);
+    logf("memory: contiguous RAM %p-%p (%u MB)%s", g_contig_base, g_contig_base + CONTIGUOUS_SIZE, CONTIGUOUS_SIZE >> 20,
+         g_watch ? ", write watch on" : "");
     return true;
+}
+
+uint32_t kmem_epoch()
+{
+    std::lock_guard<std::mutex> g(g_watch_mutex);
+    return g_epoch;
+}
+
+int kmem_written_since(const void *p, uint32_t bytes, uint32_t since)
+{
+    if (!g_watch || !bytes) return -1;
+    uintptr_t base = (uintptr_t)g_contig_base, at = (uintptr_t)p;
+    if (at < base || at + bytes > base + CONTIGUOUS_SIZE) return -1;
+    uintptr_t first = (at - base) / PAGE, last = (at + bytes - 1 - base) / PAGE;
+    std::lock_guard<std::mutex> g(g_watch_mutex);
+    ULONG_PTR count = last - first + 1;
+    ULONG gran;
+    if (GetWriteWatch(WRITE_WATCH_FLAG_RESET, (void *)(base + first * PAGE), count * PAGE, g_written.data(), &count, &gran))
+        return -1;
+    if (count) {
+        g_epoch++;
+        for (ULONG_PTR i = 0; i < count; i++) g_page_epoch[((uintptr_t)g_written[i] - base) / PAGE] = g_epoch;
+    }
+    for (uintptr_t i = first; i <= last; i++)
+        if (g_page_epoch[i] > since) return 1;
+    return 0;
 }
 
 namespace xk {
