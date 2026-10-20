@@ -2,6 +2,7 @@
 
 #include "common.h"
 #include "input/bindings.h"
+#include "lang.h"
 #include "timing.h"
 
 #include <algorithm>
@@ -76,6 +77,16 @@ void settings_load()
             g_cfg.aniso = n >= 16 ? 16 : n >= 8 ? 8 : n >= 4 ? 4 : n >= 2 ? 2 : 0;
         } else if (k == "viewmodel_fov") g_cfg.viewmodel_fov = std::clamp(v, 50.0f, 120.0f);
         else if (k == "fpscounter") g_cfg.fpscounter = v != 0;
+        else if (k == "camera_shake") g_cfg.camera_shake = v != 0;
+        else if (k == "vsync") g_cfg.vsync = v != 0;
+        else if (k == "reload_blur") g_cfg.reload_blur = v != 0;
+        else if (k == "textures") g_cfg.textures = v != 0;
+        else if (k == "draw_distance") g_cfg.draw_distance = std::clamp(atoi(val), 1, 16);
+        else if (k == "input") g_cfg.input_pad = !strcmp(val, "controller");
+        else if (k == "language") {
+            int l = lang::from_code(val);
+            if (l >= 0) g_cfg.language = l;
+        }
         else if (k == "subtitles") g_cfg.subtitles = v != 0;
         else if (k == "texture_pack_max") g_cfg.texture_pack_max = std::clamp(atoi(val), 256, 8192);
         else if (k == "reticle_colour") g_cfg.reticle_colour = strcmp(val, "game") ? (int)(strtoul(val, nullptr, 16) & 0xFFFFFF) : -1;
@@ -99,7 +110,7 @@ void settings_save()
     std::lock_guard<std::mutex> g(g_lock);
     FILE *f = nullptr;
     if (_wfopen_s(&f, ini_file().c_str(), L"w") || !f) return;
-    fprintf(f, "# BlackHD-PC settings (written by PC SETTINGS and on exit; command-line flags override them)\n");
+    fprintf(f, "# BlackDefinitiveHDPC settings (written by PC SETTINGS and on exit; command-line flags override them)\n");
     if (g_cfg.render_native) fprintf(f, "render = native\n");
     else if (g_cfg.render_h) fprintf(f, "render = %d\n", g_cfg.render_h);
     else fprintf(f, "render = scale\n");
@@ -123,6 +134,14 @@ void settings_save()
     fprintf(f, "autoaim = %d\n", !g_cfg.autoaim ? 0 : g_cfg.autoaim_pad_only ? 2 : 1); // 2 = controller only
     fprintf(f, "fov = %.1f\nviewmodel_fov = %.1f\n", g_cfg.fov, g_cfg.viewmodel_fov);
     fprintf(f, "fpscounter = %d\nsubtitles = %d\n", g_cfg.fpscounter ? 1 : 0, g_cfg.subtitles ? 1 : 0);
+    fprintf(f, "camera_shake = %d\nvsync = %d\n", g_cfg.camera_shake ? 1 : 0, g_cfg.vsync ? 1 : 0);
+    fprintf(f, "reload_blur = %d\n", g_cfg.reload_blur ? 1 : 0);
+    bool textures = g_cfg.textures_next >= 0 ? g_cfg.textures_next != 0 : g_cfg.textures; // read at start, as fps
+    int language = g_cfg.language_next >= 0 ? g_cfg.language_next : g_cfg.language;
+    fprintf(f, "textures = %d\nlanguage = %s\n", textures ? 1 : 0, lang::code(language));
+    fprintf(f, "draw_distance = %d\n", g_cfg.draw_distance);
+    bool pad = g_cfg.input_pad_next >= 0 ? g_cfg.input_pad_next != 0 : g_cfg.input_pad;
+    fprintf(f, "input = %s\n", pad ? "controller" : "keyboard");
     fprintf(f, "skipanymovie = %d\n", g_cfg.skip_movies ? 1 : 0);
     fprintf(f, "seamfill = %d\n", g_cfg.seam_fill ? 1 : 0);
     fprintf(f, "effectsnative = %d\n", g_cfg.effects_native ? 1 : 0);

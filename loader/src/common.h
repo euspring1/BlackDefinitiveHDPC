@@ -74,8 +74,12 @@ struct Config {
     bool hd_reticle = true;     // black.ini hd_reticle: the HUD atlas at 4x with a sharp dot reticle (d3d/texture.cpp)
     bool dump_textures = false; // --dump-textures: write uploaded textures to textures\dump\ (d3d/texture.cpp)
     // black.ini texture_pack: a folder of HD textures from a PCSX2 pack of the PS2 version, matched to the game's by
-    // picture (d3d/texpack.cpp). Empty = textures\replacements in the port folder when it exists; "off" = none.
+    // picture (d3d/texpack.cpp). Empty = mods\replacements in the port folder when it exists; "off" = none.
     std::wstring texture_pack;
+    bool textures = true;        // TEXTURES (PC SETTINGS > MODS): use the pack; read at start (textures_next: the next run's)
+    int textures_next = -1;
+    int language = 0;            // LANGUAGE (PC SETTINGS > MODS): 0 English, 1 Brazilian Portuguese (lang.h); read at start
+    int language_next = -1;      // a menu choice for the next run (-1: none)
     int texture_pack_max = 2048; // black.ini texture_pack_max: larger pack textures are loaded from a smaller mip
     bool crouch_hold = true;   // crouch while the key is held, overriding the profile's toggle option (input/mouselook.cpp)
     float walk_speed = 0.25f;  // the walk key's share of a full stick push for the movement keys (black.ini walk_speed)
@@ -87,6 +91,12 @@ struct Config {
     int aniso = 16;              // anisotropic filtering max (0 = the game's filters, else 2/4/8/16; PC SETTINGS)
     float viewmodel_fov = 85.0f; // the gun and hands' field of view in play, degrees (fov.cpp; 70 = the game's)
     bool fpscounter = false;     // draw the current frame rate over the picture (d3d/fps.cpp)
+    bool camera_shake = true;    // the view shakes at explosions as in the original (shake.cpp; PC SETTINGS > MODS)
+    bool reload_blur = false;    // the reload's depth blur of the original, off by default (effects.cpp; PC SETTINGS > MODS)
+    int draw_distance = 2;       // LOD and draw distances x 1 (the game's), 2 (default), 4, 8, 12, 16 (drawdist.cpp; PC SETTINGS > MODS)
+    bool input_pad = false;      // INPUT (PC SETTINGS > INPUT): the prompts show the controller's buttons instead of the
+    int input_pad_next = -1;     // keys; the text is built at start (fe/pages.cpp), so a choice applies at the next one
+    bool vsync = false;          // Present waits for the monitor's refresh (d3d/host.cpp; PC SETTINGS > MODS)
     bool subtitles = false;      // draw .srt subtitles over the movies (an enabled mod's subtitles\ folder; off: some
                                  // versions of the game have them in the videos)
     bool autoaim = true;       // the game's view pull toward targets (input/autoaim.cpp; --autoaim, PC SETTINGS)
@@ -130,8 +140,7 @@ struct Config {
     unsigned watch_pad = 0;    // --watch-pad N: from frame N, log game code that reads the right stick (DR3)
     uint32_t watch_read = 0;   // --watch-read [w][*]ADDR[+OFF]: with --watch-pad, watch these 4 bytes instead
     uint32_t watch_read_off = 0; // (* = ADDR holds a pointer, read when the watch starts; w = writes only)
-    bool watch_read_deref = false, watch_write_only = false;
-};
+    bool watch_read_deref = false, watch_write_only = false;};
 extern Config g_cfg;
 extern DWORD_PTR g_game_cpu; // affinity of the threads that run game code (0 = any, --multicore)
 extern uint32_t g_pad_watch; // address DR3 watches for --watch-pad (input/xinput.cpp), 0 = off

@@ -3,9 +3,9 @@
 // PC SETTINGS > MODS page without ever touching the game's files. Turning one off is just a .off marker file in
 // the mod's own folder (default: on), so a mod folder carries its own state and no ini parsing is needed.
 //
-// A mod can also name the game language it is for (mod.ini "lang = en" / "ptbr"): the enabled mod of the highest
-// priority sets the language being played and mods of another language are blocked (Mod::blocked), so e.g. the
-// English keyboard prompts cannot leak a file into the Portuguese game.
+// A mod can also name the game language it is for (mod.ini "lang = en" / "ptbr"): while PC SETTINGS > MODS >
+// LANGUAGE plays another one it is blocked (Mod::blocked), so e.g. the English keyboard prompts cannot leak a file
+// into the Portuguese game.
 #pragma once
 
 #include <string>

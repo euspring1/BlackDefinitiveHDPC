@@ -1,6 +1,7 @@
 #include "mods.h"
 
 #include "common.h"
+#include "lang.h"
 
 #include <algorithm>
 #include <cctype>
@@ -54,20 +55,10 @@ void read_ini(const std::wstring &ini, std::string &name, int &priority, std::st
     fclose(f);
 }
 
-// The language being played: the one the highest-priority enabled mod asks for (the PT-BR mod outranks the
-// English prompts), "en" when no mod says anything (the game's own files are English). A mod that names another
-// language is then blocked: its files are not served at all, so a file only it brings cannot leak into the
-// running game (mods of the same language, or of none, still layer by priority).
-std::string language()
-{
-    std::string active = "en";
-    for (int i : g_order)
-        if (g_mods[i].on && !g_mods[i].lang.empty()) {
-            active = g_mods[i].lang;
-            break;
-        }
-    return active;
-}
+// The language being played: PC SETTINGS > MODS > LANGUAGE (lang.h). A mod that names another language is
+// blocked: its files are not served at all, so a file only it brings cannot leak into the running game (mods of the
+// same language, or of none, still layer by priority).
+std::string language() { return lang::code(g_cfg.language); }
 
 void apply_language()
 {

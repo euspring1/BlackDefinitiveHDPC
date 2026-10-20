@@ -11,6 +11,7 @@
 #include "common.h"
 #include "fe/vars.h"
 #include "input/bindings.h"
+#include "lang.h"
 #include "settings.h"
 
 #include <algorithm>
@@ -59,11 +60,11 @@ std::wstring caption(int item)
 {
     int n;
     const bindings::Action *a = bindings::actions(&n);
-    if (item >= n) return L"RESET TO DEFAULTS";
+    if (item >= n) return lang::tr(L"RESET TO DEFAULTS");
     std::wstring name = a[item].name; // "Action (use, pick up)": the part in brackets, which fits beside the keys
     size_t open = name.find(L'('), close = name.find(L')');
     if (open != std::wstring::npos && close > open) name = name.substr(open + 1, close - open - 1);
-    return upper(name);
+    return lang::tr(upper(name));
 }
 
 std::wstring keys(int item, bool focused)
@@ -73,7 +74,7 @@ std::wstring keys(int item, bool focused)
     if (item >= n) return L"";
     std::wstring s;
     for (int slot = 0; slot < bindings::kSlots; slot++) {
-        std::wstring k = item == g_capture && slot == g_slot && bindings::capturing() ? L"PRESS A KEY" : short_name(bindings::key(item, slot));
+        std::wstring k = item == g_capture && slot == g_slot && bindings::capturing() ? lang::tr(L"PRESS A KEY") : lang::tr(short_name(bindings::key(item, slot)));
         if (focused && slot == g_slot) k = L"[" + k + L"]";
         s += (slot ? L" / " : L"") + k;
     }

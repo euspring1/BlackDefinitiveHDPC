@@ -50,6 +50,7 @@ HRESULT present();                          // EndScene + Present (D3DERR_DEVICE
 // Reset with the creation parameters: every D3DPOOL_DEFAULT resource and reference to the back buffer and depth
 // surface must be released first; afterwards Direct3D is back at its default states.
 bool reset_device();
+void set_vsync(bool on); // PC SETTINGS > MODS > V-SYNC: Present waits for the monitor (a device Reset at the next Swap)
 bool window_closed();
 
 } // namespace host3d

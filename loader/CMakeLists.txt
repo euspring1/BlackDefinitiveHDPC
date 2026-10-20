@@ -1,8 +1,8 @@
-﻿cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.24)
 if(POLICY CMP0184)
   cmake_policy(SET CMP0184 NEW) # MSVC_RUNTIME_CHECKS property
 endif()
-project(black_loader VERSION 1.2.0 LANGUAGES C CXX) # the release number (About box, first log line)
+project(black_loader VERSION 1.0.0 LANGUAGES C CXX) # the release number (About box, first log line)
 
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
   message(FATAL_ERROR "The loader must be 32-bit: configure with -A Win32 (or use the 'win32' preset).")
@@ -25,9 +25,14 @@ add_library(blackrt SHARED
   src/hooks.cpp
   src/timing.cpp
   src/fov.cpp
+  src/shake.cpp
+  src/effects.cpp
+  src/drawdist.cpp
+  src/saveimport.cpp
   src/reticle.cpp
   src/audio_defaults.cpp
   src/mods.cpp
+  src/lang.cpp
   src/d3d/subtitles.cpp
   src/d3d/fps.cpp
   src/d3d/cursor.cpp

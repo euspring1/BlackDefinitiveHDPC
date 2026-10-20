@@ -28,6 +28,7 @@
 #include "fe/pc_settings.h"
 #include "fe/vars.h"
 #include "input/bindings.h"
+#include "lang.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -1112,19 +1113,19 @@ void page_script(Movie &mv, const PageScript &p)
 // frame (a Move with a colour transform) with a flash bar. The copy: depth 2, dy lower, named `name`, revealed 3
 // frames after the bottom row with its own bar at new_bar_depth.
 void add_menu_row(Movie &mv, uint32_t textanim, const std::string &label, const std::string &name, float dy, int reveal,
-                  uint32_t bar_depth, uint32_t new_bar_depth)
+                  uint32_t bar_depth, uint32_t new_bar_depth, uint32_t row_depth = 2)
 {
     int t = mv.add_character(mv.clone_text(mv.character(5), label, label));
     int s6 = mv.add_character(mv.clone_sprite(mv.character(6), {{5, t}}));
     int s7 = mv.add_character(mv.clone_sprite(mv.character(7), {{6, s6}}));
     Bytes row = body(mv, mv.find_place(textanim, 0, 1));
-    wr(row, 8, 2);
+    wr(row, 8, row_depth);
     wr(row, 12, (uint32_t)s7);
     wrf(row, 36, rdf(row, 36) + dy);
     wr(row, 52, mv.cstring(name));
     mv.append_control(textanim, 0, mv.alloc(row.data(), 64));
     Bytes show = body(mv, mv.find_place(textanim, reveal, 1, 1));
-    wr(show, 8, 2);
+    wr(show, 8, row_depth);
     mv.append_control(textanim, reveal + 3, mv.alloc(show.data(), 64));
     Bytes bar = body(mv, mv.find_place(textanim, reveal, bar_depth));
     wr(bar, 8, new_bar_depth);
@@ -1134,7 +1135,7 @@ void add_menu_row(Movie &mv, uint32_t textanim, const std::string &label, const 
 
 void options_row(Movie &mv)
 {
-    add_menu_row(mv, mv.character(27), "PC SETTINGS", "PCSettings_Text", 25.9f, 55, 21, 22); // below the Profile row
+    add_menu_row(mv, mv.character(27), lang::tr("PC SETTINGS"), "PCSettings_Text", 25.9f, 55, 21, 22); // below the Profile row
 
     uint32_t script = mv.main_script();
     for (const char *f : {"PagePrepare", "PageRelease", "PageDestruct", "Update"}) mv.rename_function(script, f, std::string(f) + "0");
@@ -1171,7 +1172,7 @@ void options_row(Movie &mv)
 void main_menu_quit(Movie &mv, int textanim, float dy, int reveal, uint32_t bar_depth, uint32_t new_bar_depth,
                     const char *last, const char *first, const std::vector<std::string> &hover)
 {
-    add_menu_row(mv, mv.character(textanim), "QUIT", "Quit_Text", dy, reveal, bar_depth, new_bar_depth);
+    add_menu_row(mv, mv.character(textanim), lang::tr("QUIT"), "Quit_Text", dy, reveal, bar_depth, new_bar_depth);
     uint32_t script = mv.main_script();
     for (const char *f : {"PagePrepare", "PageRelease", "PageDestruct", "Update"}) mv.rename_function(script, f, std::string(f) + "0");
     Classes classes = own_classes_prepare(mv);
@@ -1206,12 +1207,14 @@ void pc_menu(Movie &mv)
 {
     const auto &groups = pcset::groups();
     if (groups.size() != 4) throw Error("the PC SETTINGS menu has four rows");
-    literal(mv, mv.character(18), "PC SETTINGS");
+    literal(mv, mv.character(18), lang::tr("PC SETTINGS"));
     const int texts[4] = {14, 11, 8, 5}; // rows top to bottom: ControllerSetup, SoundSetup, PictureSetup, Playerprofile
     for (int i = 0; i < 4; i++) literal(mv, mv.character(texts[i]), groups[i].title);
     // MODS: a fifth row below the four, opening the mods page (mods.h, pcset::mods_group). Same movie and same
     // measurements as the "PC SETTINGS" row the port adds to the game's own Options page.
-    add_menu_row(mv, mv.character(27), "MODS", "Mods_Text", 25.9f, 55, 21, 22);
+    add_menu_row(mv, mv.character(27), lang::tr("MODS"), "Mods_Text", 25.9f, 55, 21, 22);
+    // INPUT: a sixth row below MODS (pcset::input_group), revealed with it (the movie has no later reveal frame)
+    add_menu_row(mv, mv.character(27), lang::tr("INPUT"), "Input_Text", 2 * 25.9f, 55, 21, 61, 60); // depths the movie leaves free
     mv.rename_function(mv.main_script(), "PagePrepare", "PagePrepare0");
     mv.rename_function(mv.main_script(), "Update", "Update0");
     Classes classes = own_classes_prepare(mv);
@@ -1220,8 +1223,9 @@ void pc_menu(Movie &mv)
     heal_update(a, "controllerButton", classes, "pcs");
     // the rows this page shows, top to bottom, as the pointer finds them: the game's own four and the port's MODS row
     heal_update(a, "modsButton", classes, "pcs",
-                {"controllerButton", "soundButton", "pictureButton", "Playerprofile", "modsButton"});
+                {"controllerButton", "soundButton", "pictureButton", "Playerprofile", "modsButton", "inputButton"});
     a.push(Value::S("modsButton")).define_local2();
+    a.push(Value::S("inputButton")).define_local2();
     a.push(Value::S("pcOver")).define_local2(); // the row under the pointer, and the one it focused last
     a.push(Value::S("pcHover")).define_local2();
     a.function2("PagePrepare", [&groups](Asm &f) {
@@ -1229,11 +1233,15 @@ void pc_menu(Movie &mv)
         const char *buttons[4] = {"controllerButton", "soundButton", "pictureButton", "Playerprofile"};
         for (int i = 0; i < 4; i++) set(f, {buttons[i]}, "actionSelectPage", S(groups[i].page));
         make(f, "modsButton", "BkMenuButton", {at({"Main", "TextAnim", "Mods_Text"})});
+        make(f, "inputButton", "BkMenuButton", {at({"Main", "TextAnim", "Input_Text"})});
         set(f, {"Playerprofile"}, "buttonDown", at({"modsButton"}));
         set(f, {"modsButton"}, "buttonUp", at({"Playerprofile"}));
-        set(f, {"modsButton"}, "buttonDown", at({"controllerButton"}));
-        set(f, {"controllerButton"}, "buttonUp", at({"modsButton"}));
+        set(f, {"modsButton"}, "buttonDown", at({"inputButton"}));
+        set(f, {"inputButton"}, "buttonUp", at({"modsButton"}));
+        set(f, {"inputButton"}, "buttonDown", at({"controllerButton"}));
+        set(f, {"controllerButton"}, "buttonUp", at({"inputButton"}));
         set(f, {"modsButton"}, "actionSelectPage", S(pcset::mods_group().page));
+        set(f, {"inputButton"}, "actionSelectPage", S(pcset::input_group().page));
         call(f, {"MyMenu"}, "SetFunctionBack"); // no argument: not Options' own back (save and leave)
         call(f, {"MyMenu"}, "SetPageBack", {S("OptionsMenuXbox")});
         f.push_true().ret();
@@ -1241,10 +1249,12 @@ void pc_menu(Movie &mv)
     a.function2("PageRelease", [](Asm &f) {
         call_function(f, "PageRelease0");
         call(f, {"modsButton"}, "Release");
+        call(f, {"inputButton"}, "Release");
     });
     a.function2("PageDestruct", [](Asm &f) {
         call_function(f, "PageDestruct0");
         f.push(Value::S("modsButton")).delete2().pop();
+        f.push(Value::S("inputButton")).delete2().pop();
     });
     mv.append_control(mv.main, 0, mv.do_action(a.finish()));
 }
@@ -1259,6 +1269,7 @@ constexpr float kRowY0 = -108.8f, kRowDY = 40.0f;
 // the bullet bar at 45 % (a bullet is about 33 units tall) on the value line, centred about 16 below the row
 constexpr float kBarScale = 0.45f, kBarDX = 12.0f, kBarDY = 16.0f - 15.9f * kBarScale, kNumberX = 140.0f;
 constexpr float kKeysX = 175.0f; // a key row's keys, on its caption's line
+constexpr float kValueRight = 265.0f; // a choice's value box ends by the right arrow
 constexpr uint32_t kBarDepth = 101;
 
 void choice_page(Movie &mv, const std::string &title, const std::vector<RowSpec> &rows, const std::string &back, bool wrap, int page_id)
@@ -1284,7 +1295,11 @@ void choice_page(Movie &mv, const std::string &title, const std::vector<RowSpec>
         float y = kRowY0 + kRowDY * i;
         int vs = -1;
         if (!r.value.empty()) {
-            int vt = mv.add_character(mv.clone_text(mv.character(21), r.value, r.value));
+            // the value's box (left, top, right, bottom at +8..+20) runs to the right arrow instead of 175: a longer
+            // value ("PORTUGUÊS (BR) (NEXT START)") wraps, and only its first line shows
+            uint32_t box = mv.clone_text(mv.character(21), r.value, r.value);
+            wrf(mv.apt, box + 16, kValueRight);
+            int vt = mv.add_character(box);
             vs = mv.add_character(mv.clone_sprite(mv.character(22), {{21, vt}}));
         }
         int row;
@@ -1397,7 +1412,7 @@ void pause_row(Movie &mv)
     uint32_t main_clip = mv.character(33);
     constexpr uint32_t kDepth = 97;
     require_free(mv, main_clip, kDepth);
-    int lt = mv.add_character(mv.clone_text(mv.character(18), "PC SETTINGS", "PC SETTINGS"));
+    int lt = mv.add_character(mv.clone_text(mv.character(18), lang::tr("PC SETTINGS"), lang::tr("PC SETTINGS")));
     int ls = mv.add_character(mv.clone_sprite(mv.character(19), {{18, lt}}));
     int row = mv.add_character(mv.clone_sprite(mv.character(20), {{19, ls}}));
     Bytes b = body(mv, mv.find_place(main_clip, 0, 85));
@@ -1672,6 +1687,11 @@ int button_glyphs_to_keys(uint32_t string_key, std::string &t)
         {0x21, 15}, // D-pad down: health pack
     };
     int n = 0;
+    // The controller options' ON / OFF pair stands side by side; the Portuguese "Ligado" / "  Desligado" are too long
+    // for it and overlap, so they read as one word. Short words like the original's.
+    if (string_key == 0x11c3b459 && t == "Ligado") t = "Sim", n++;
+    if (string_key == 0x45c04449 && t.find("Desligado") != std::string::npos) t = "N\xC3\xA4o", n++;
+    if (g_cfg.input_pad) return n; // INPUT: CONTROLLER keeps the game's button icons
     // "Press START" before the main menu (and on later prompts): the port's menus take Enter. The Portuguese
     // translation says "o botäo start" (its font draws ä as ã).
     if (string_key == 0x905e4ee0 || string_key == 0x2fcce936 || string_key == 0x661a3a37) {
@@ -1682,10 +1702,6 @@ int button_glyphs_to_keys(uint32_t string_key, std::string &t)
                 n++;
             }
     }
-    // The controller options' ON / OFF pair stands side by side; the Portuguese "Ligado" / "  Desligado" are too long
-    // for it and overlap, so they read as one word. Short words like the original's.
-    if (string_key == 0x11c3b459 && t == "Ligado") t = "Sim", n++;
-    if (string_key == 0x45c04449 && t.find("Desligado") != std::string::npos) t = "N\xC3\xA4o", n++;
     // The face buttons' one-character icons in menu text ("press <A> to save": U+00B2 = A, U+00B9 = B): the menus
     // take Enter and Backspace. Lines ending in ':' are the controller screen's button list and keep them.
     size_t last = t.find_last_not_of(" \r\n");
@@ -1727,7 +1743,8 @@ void legend_keys(Movie &mv)
         int sprite, text_char;
         const char *key;
     };
-    const Item items[] = {{14, 12, "[SETAS]"}, {15, 12, "[SETAS]"}, {16, 12, "[SETAS]"}, {22, 20, "[ENTER]"}, {28, 26, "[BACKSPACE]"}};
+    const char *arrows = lang::tr("[ARROWS]");
+    const Item items[] = {{14, 12, arrows}, {15, 12, arrows}, {16, 12, arrows}, {22, 20, "[ENTER]"}, {28, 26, "[BACKSPACE]"}};
     for (const Item &it : items) {
         uint32_t sp = mv.character(it.sprite);
         bool label = false;
@@ -1735,7 +1752,10 @@ void legend_keys(Movie &mv)
             if (rd(mv.apt, ctl) != 3) continue;
             uint32_t nm = rd(mv.apt, ctl + 52);
             if (nm && mv.str(nm) == "Text") {
-                wrf(mv.apt, ctl + 32, kKeyX + kCharW * (float)strlen(it.key) + kGap);
+                float chars = 0; // characters (not UTF-8 bytes); W and M about twice as wide
+                for (const char *c = it.key; *c; c++)
+                    if (((uint8_t)*c & 0xC0) != 0x80) chars += *c == 'W' || *c == 'M' ? 2.0f : 1.0f;
+                wrf(mv.apt, ctl + 32, kKeyX + kCharW * chars + kGap);
                 label = true;
             } else {
                 for (uint32_t m = 16; m <= 28; m += 4) wrf(mv.apt, ctl + m, 0.0f); // a b c d: nothing left to draw
@@ -1754,11 +1774,21 @@ void legend_keys(Movie &mv)
 bool patch_strings(const std::wstring &game_dir, const std::wstring &out_root)
 {
     const std::wstring rel = L"\\language\\strings\\MainUS.bin";
+    // LANGUAGE: the Portuguese text ships with the port (lang.h); English is the game's own
+    std::wstring src = game_dir + rel;
+    if (lang::portuguese()) {
+        std::wstring pt = lang::root() + L"\\strings\\MainUS.bin";
+        if (GetFileAttributesW(pt.c_str()) != INVALID_FILE_ATTRIBUTES) src = pt;
+        else logf("fe: %s not found; the game's own text is used", narrow(pt).c_str());
+    }
     Bytes in;
-    if (!read_file(game_dir + rel, in)) {
-        logf("fe: %s not found", narrow(game_dir + rel).c_str());
+    if (!read_file(src, in)) {
+        logf("fe: %s not found", narrow(src).c_str());
         return false;
     }
+    // XBOX in the messages: the computer's, in the language played
+    const char *computer = lang::portuguese() ? "COMPUTADOR" : "COMPUTER";
+    const char *console = lang::portuguese() ? "CONSOLE XBOX" : "XBOX CONSOLE";
     try {
         if (in.size() < 16) throw Error("too short");
         uint32_t n = rd(in, 8), table = rd(in, 12);
@@ -1769,7 +1799,7 @@ bool patch_strings(const std::wstring &game_dir, const std::wstring &out_root)
             uint32_t at = rd(in, table + 4 * i), end = i + 1 < n ? rd(in, table + 4 * (i + 1)) : (uint32_t)in.size();
             if (at + 4 > end || end > in.size()) throw Error("an entry out of order");
             std::string s((const char *)&in[at + 4], strnlen((const char *)&in[at + 4], end - at - 4)), t = s;
-            for (auto [from, to] : {std::pair<const char *, const char *>{"XBOX CONSOLE", "COMPUTER"}, {"XBOX", "COMPUTER"}})
+            for (auto [from, to] : {std::pair<const char *, const char *>{console, computer}, {"XBOX", computer}})
                 for (size_t p = t.find(from); p != std::string::npos; p = t.find(from, p + strlen(to)))
                     t.replace(p, strlen(from), to);
             changed += t != s;
@@ -1783,11 +1813,11 @@ bool patch_strings(const std::wstring &game_dir, const std::wstring &out_root)
             while (i + 1 < n && out.size() % 4) out.push_back(0);
         }
         if (!write_file(out_root + rel, out)) return false;
-        logf("fe: game text: %d strings say COMPUTER instead of XBOX", changed);
+        logf("fe: game text (%s): %d strings say %s instead of XBOX", lang::code(g_cfg.language), changed, computer);
         logf("fe: game text: %d controller button icons in %d strings show the bound keys", prompts, prompt_strings);
         return true;
     } catch (const std::exception &e) {
-        logf("fe: %s is not laid out as expected (%s)", narrow(game_dir + rel).c_str(), e.what());
+        logf("fe: %s is not laid out as expected (%s)", narrow(src).c_str(), e.what());
         DeleteFileW((out_root + rel).c_str());
         return false;
     }
@@ -1830,12 +1860,16 @@ bool fe_build_pages(const std::wstring &game_dir, const std::wstring &out_root)
                 if (pcset::link(n)) controls = g.page;
         }
         Movie keys(sound);
-        choice_page(keys, "KEY BINDINGS", key_rows(), controls, false, 100);
+        choice_page(keys, lang::tr("KEY BINDINGS"), key_rows(), controls, false, 100);
         add_movie(c, lower(kBindings), keys.build());
         const pcset::Group &mg = pcset::mods_group(); // the MODS row on the PC SETTINGS page opens this one
         Movie mods(sound);
         choice_page(mods, mg.title, group_rows(mg, false), "PCSettings", true, 4);
         add_movie(c, lower(mg.page), mods.build());
+        const pcset::Group &ig = pcset::input_group(); // and INPUT, the row below it
+        Movie input(sound);
+        choice_page(input, ig.title, group_rows(ig, false), "PCSettings", true, 5);
+        add_movie(c, lower(ig.page), input.build());
         Movie opt(options);
         options_row(opt);
         c.movies["optionsmenuxbox"] = opt.build();
@@ -1882,7 +1916,7 @@ bool fe_build_pages(const std::wstring &game_dir, const std::wstring &out_root)
     logf("fe: PC SETTINGS pages: main menu %s, pause menu %s (%s)", main_ok ? "on" : "off", pause_ok ? "on" : "off",
          narrow(out_root).c_str());
     Bytes core;
-    bool legend_ok = rebuild(game_dir, L"Core.bin", [](Container &c) {
+    bool legend_ok = !g_cfg.input_pad && rebuild(game_dir, L"Core.bin", [](Container &c) { // CONTROLLER: the game's icons
         Movie mv(movie(c, "corexbox"));
         legend_keys(mv);
         c.movies["corexbox"] = mv.build();

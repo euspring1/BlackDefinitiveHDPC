@@ -7,10 +7,12 @@
 #include "common.h"
 #include "d3d/device.h"
 #include "d3d/host.h"
+#include "drawdist.h"
 #include "fe/bind_list.h"
 #include "fe/vars.h"
 #include "fov.h"
 #include "input/autoaim.h"
+#include "lang.h"
 #include "mods.h"
 #include "settings.h"
 #include "timing.h"
@@ -154,6 +156,16 @@ int fps_index(int fps)
         if (kFrameRates[i] == fps) return i;
     return 0;
 }
+// DRAW DISTANCE: times the game's LOD and draw distances
+const int kDistances[] = {1, 2, 4, 8, 12, 16};
+constexpr int kDistN = sizeof kDistances / sizeof kDistances[0];
+int distance_get()
+{
+    for (int i = 0; i < kDistN; i++)
+        if (kDistances[i] == g_cfg.draw_distance) return i;
+    return 0;
+}
+
 bool shown_wide() { return g_cfg.widescreen_next >= 0 ? g_cfg.widescreen_next != 0 : g_cfg.widescreen; }
 
 struct Row {
@@ -238,11 +250,46 @@ const Row kRows[] = {
     {"ANISOTROPIC FILTERING", 5, [] { return aniso_get(); }, [](int i) { g_cfg.aniso = kAniso[i]; },
      [](int i) { return i ? number((float)kAniso[i], L"%.0fX") : std::wstring(L"OFF"); }},
     {"WINDOW SIZE", kWindowN, window_get, window_set, window_text, false, true},
+    // MODS (first row of the page)
+    {"CAMERA SHAKE", 2, [] { return (int)g_cfg.camera_shake; }, [](int i) { g_cfg.camera_shake = i != 0; },
+     [](int i) { return on_off(i); }},
+    // MODS (after RELOAD BLUR)
+    {"V-SYNC", 2, [] { return (int)g_cfg.vsync; },
+     [](int i) {
+         g_cfg.vsync = i != 0;
+         host3d::set_vsync(g_cfg.vsync);
+     },
+     [](int i) { return on_off(i); }},
+    // MODS (after CAMERA SHAKE)
+    {"RELOAD BLUR", 2, [] { return (int)g_cfg.reload_blur; }, [](int i) { g_cfg.reload_blur = i != 0; },
+     [](int i) { return on_off(i); }},
+    // MODS (after V-SYNC): the texture pack and the game's text are read at start, as the frame rate
+    {"TEXTURES", 2, [] { return (int)(g_cfg.textures_next >= 0 ? g_cfg.textures_next != 0 : g_cfg.textures); },
+     [](int i) { g_cfg.textures_next = (i != 0) == g_cfg.textures ? -1 : i; },
+     [](int i) { return on_off(i) + ((i != 0) != g_cfg.textures ? L" (NEXT START)" : L""); }},
+    {"LANGUAGE", 2, [] { return g_cfg.language_next >= 0 ? g_cfg.language_next : g_cfg.language; },
+     [](int i) { g_cfg.language_next = i == g_cfg.language ? -1 : i; },
+     [](int i) {
+         // each language in its own words
+         return std::wstring(i == lang::kPortuguese ? L"PORTUGUÊS (BR)" : L"ENGLISH") + (i != g_cfg.language ? L" (NEXT START)" : L"");
+     }},
+    // MODS (after LANGUAGE): applies at once
+    {"DRAW DISTANCE", kDistN, [] { return distance_get(); },
+     [](int i) {
+         g_cfg.draw_distance = kDistances[i];
+         drawdist_set(g_cfg.draw_distance);
+     },
+     [](int i) { return number((float)kDistances[i], L"%.0fX") + (i == 0 ? L" (ORIGINAL)" : L""); }},
+    // INPUT: the prompts' buttons, built into the game's text at start
+    {"INPUT DEVICE", 2, [] { return (int)(g_cfg.input_pad_next >= 0 ? g_cfg.input_pad_next != 0 : g_cfg.input_pad); },
+     [](int i) { g_cfg.input_pad_next = (i != 0) == g_cfg.input_pad ? -1 : i; },
+     [](int i) { return std::wstring(i ? L"CONTROLLER" : L"MOUSE/KEYBOARD") + ((i != 0) != g_cfg.input_pad ? L" (NEXT START)" : L""); }},
 };
 constexpr int kRowN = sizeof kRows / sizeof kRows[0];
 constexpr int kKeyBindings = 15;
 constexpr int kAimMode = 16, kCrouchMode = 17, kWeaponFov = 18, kFpsCounter = 19, kSubtitles = 20;
-constexpr int kScale = 21, kAnisoRow = 22, kWindowRow = 23;
+constexpr int kScale = 21, kAnisoRow = 22, kWindowRow = 23, kCameraShake = 24, kVsync = 25;
+constexpr int kReloadBlur = 26, kTextures = 27, kLanguage = 28, kDrawDistance = 29, kInputDevice = 30;
 // Rows past the fixed ones are the mods found in <port>\mods: one ON/OFF line each (mods.h).
 int mod_count() { return (int)mods::list().size(); }
 
@@ -251,24 +298,33 @@ int mod_count() { return (int)mods::list().size(); }
 const std::vector<Group> &groups()
 {
     static const std::vector<Group> g = {
-        {"PCVideo", "VIDEO", {0, kWindowRow, kScale, 1, kAnisoRow, 5}},
-        {"PCDisplay", "DISPLAY", {6, 7, 8, 9, 3, 4}},                         // + brightness, gamma
-        {"PCGame", "AUDIO AND GAME", {10, 12, kSubtitles, kFpsCounter, 2, kWeaponFov}}, // + both fields of view
-        {"PCControls", "CONTROLS", {13, 14, 11, kAimMode, kCrouchMode, kKeyBindings}},  // + auto-aim
+        {"PCVideo", lang::tr("VIDEO"), {0, kWindowRow, kScale, 1, kAnisoRow, 5}},
+        {"PCDisplay", lang::tr("DISPLAY"), {6, 7, 8, 9, 3, 4}},                         // + brightness, gamma
+        {"PCGame", lang::tr("AUDIO AND GAME"), {10, 12, kSubtitles, kFpsCounter, 2, kWeaponFov}}, // + both fields of view
+        {"PCControls", lang::tr("CONTROLS"), {13, 14, 11, kAimMode, kCrouchMode, kKeyBindings}},  // + auto-aim
     };
     return g;
 }
 
-// The MODS page: one row per mod found under <port>\mods (a page holds six rows: mods beyond them are not shown).
+// The MODS page: CAMERA SHAKE, RELOAD BLUR, V-SYNC, TEXTURES, LANGUAGE, DRAW DISTANCE, then one row per mod found under
+// <port>\mods (a page holds six rows: mods beyond them are not shown).
 const Group &mods_group()
 {
     static Group g;
-    g = {"PCMods", "MODS", {}};
-    for (int i = 0; i < mod_count() && i < fevar::kRows; i++) g.rows.push_back(kRowN + i);
-    if (mod_count() > fevar::kRows) {
+    g = {"PCMods", lang::tr("MODS"), {kCameraShake, kReloadBlur, kVsync, kTextures, kLanguage, kDrawDistance}};
+    const int room = fevar::kRows - (int)g.rows.size();
+    for (int i = 0; i < mod_count() && i < room; i++) g.rows.push_back(kRowN + i);
+    if (mod_count() > room) {
         static int told;
-        if (told++ < 1) logf("mods: %d mods installed, %d of them fit the MODS page", mod_count(), fevar::kRows);
+        if (told++ < 1) logf("mods: %d mods installed, %d of them fit the MODS page", mod_count(), room);
     }
+    return g;
+}
+
+// INPUT: the row below MODS on the PC SETTINGS page
+const Group &input_group()
+{
+    static const Group g = {"PCInput", lang::tr("INPUT"), {kInputDevice}};
     return g;
 }
 
@@ -276,7 +332,7 @@ int count() { return kRowN + mod_count(); }
 
 const char *label(int n)
 {
-    if (n >= 0 && n < kRowN) return kRows[n].label;
+    if (n >= 0 && n < kRowN) return lang::tr(kRows[n].label);
     int i = n - kRowN;
     return i >= 0 && i < mod_count() ? mods::list()[i].title.c_str() : "";
 }
@@ -290,13 +346,13 @@ std::wstring value(int n)
         std::wstring v = m.on && !m.blocked ? L"ON" : L"OFF";
         if (m.blocked) v += L" (LANGUAGE)"; // a mod for another language than the one being played (mods.h)
         if (m.on != m.at_start) v += L" (RESTART)"; // read at start: the port restarts at the main menu (fe/restart.cpp)
-        return v;
+        return lang::tr(v);
     }
     if (n < 0) return L"";
     const Row &r = kRows[n];
     int i = std::min(r.get(), r.choices - 1);
     if (i < 0 && !r.custom) i = 0; // only the rows that can hold a value from outside their list show CUSTOM
-    return r.text(i);
+    return lang::tr(r.text(i));
 }
 
 void step(int n, int dir)
@@ -349,6 +405,7 @@ void fill_page(int group)
     const std::vector<int> *rows = nullptr;
     if (group >= 0 && group < (int)gs.size()) rows = &gs[group].rows;
     else if (group == (int)gs.size()) rows = &mods_group().rows; // the MODS page, after the four groups
+    else if (group == (int)gs.size() + 1) rows = &input_group().rows; // INPUT, after MODS
     if (!rows) return;
     for (int i = 0; i < fevar::kRows; i++) {
         int n = i < (int)rows->size() ? (*rows)[i] : -1;

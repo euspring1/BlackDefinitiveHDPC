@@ -2,6 +2,7 @@
 
 #include "settings.h"
 #include "perf.h"
+#include "d3d/draw.h"
 
 #include <shellapi.h>
 
@@ -543,8 +544,9 @@ bool create_device()
     pp.Windowed = TRUE;
     pp.EnableAutoDepthStencil = TRUE;
     pp.AutoDepthStencilFormat = D3DFMT_D24S8;
-    // Frames are paced by the emulated Xbox vblank (D3DDevice_Swap); the host monitor's refresh must not add a second clock.
-    pp.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
+    // Frames are paced by the emulated Xbox vblank (D3DDevice_Swap); the host monitor's refresh must not add a second
+    // clock unless V-SYNC (PC SETTINGS > MODS) asks Present to wait for it.
+    pp.PresentationInterval = g_cfg.vsync ? D3DPRESENT_INTERVAL_ONE : D3DPRESENT_INTERVAL_IMMEDIATE;
     // FPU_PRESERVE: the game's x87 math must keep its precision; MULTITHREADED: loader threads may call in.
     DWORD flags = D3DCREATE_HARDWARE_VERTEXPROCESSING | D3DCREATE_FPU_PRESERVE | D3DCREATE_MULTITHREADED;
     g_pp = pp;
@@ -594,6 +596,14 @@ HRESULT present()
     g_in_scene = false;
     RECT src = {0, 0, g_frame_w ? g_frame_w : g_bb_w, g_frame_h ? g_frame_h : g_bb_h};
     return g_dev->Present(&src, nullptr, nullptr, nullptr); // stretched to the client area (1:1 unless it outgrew the monitors)
+}
+
+// V-SYNC from the menu: the present interval is a creation parameter, applied by a device Reset at the next Swap.
+void set_vsync(bool on)
+{
+    g_pp.PresentationInterval = on ? D3DPRESENT_INTERVAL_ONE : D3DPRESENT_INTERVAL_IMMEDIATE;
+    xd3d::request_device_reset();
+    logf("host: v-sync %s", on ? "on (Present waits for the monitor's refresh)" : "off");
 }
 
 bool reset_device()

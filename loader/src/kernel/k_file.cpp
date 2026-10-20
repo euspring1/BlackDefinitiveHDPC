@@ -7,6 +7,7 @@
 // File handles are real Windows handles opened through ntdll, so read/write/APC/event semantics carry over.
 #include "kernel/kexports.h"
 #include "kernel/nt.h"
+#include "lang.h"
 #include "mods.h"
 
 #include <cctype>
@@ -144,6 +145,15 @@ NTSTATUS resolve(HANDLE root, const XANSI_STRING *name, Resolved &r)
                     break;
                 }
             }
+        // LANGUAGE: the Portuguese fonts (and the likes) shipped with the port stand in for the game's language\ files
+        if (!have && lang::portuguese() && _strnicmp(rest.c_str(), "\\language\\", 10) == 0) {
+            std::wstring cand = lang::root() + widen(rest.substr(9));
+            DWORD a = GetFileAttributesW(cand.c_str());
+            if (a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY)) {
+                alt = cand;
+                have = true;
+            }
+        }
         if (have) {
             r.host_nt = L"\\??\\" + alt;
             static std::set<std::wstring> told;

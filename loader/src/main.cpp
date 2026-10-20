@@ -8,6 +8,11 @@
 #include "fe/calls.h"
 #include "fe/pages.h"
 #include "fov.h"
+#include "saveimport.h"
+#include "shake.h"
+#include "drawdist.h"
+#include "effects.h"
+#include "lang.h"
 #include "reticle.h"
 #include "audio_defaults.h"
 #include "mods.h"
@@ -54,7 +59,7 @@ bool g_console;
 void usage()
 {
     static const char kUsage[] =
-           "BlackHD-PC " BLACK_VERSION " by Spring Code (based on black-pc by Spark198rus, GPL-2.0-or-later)\n"
+           "BlackDefinitiveHDPC " BLACK_VERSION " by Spring Code (based on black-pc by Spark198rus, GPL-2.0-or-later)\n"
            "usage: black.exe [options] [path\\to\\default.xbe | game folder]\n"
            "  --info            print the XBE structure and exit\n"
            "  --hdd <dir>       host folder for the Xbox hard disk (saved games; default savedata next to black.exe)\n"
@@ -98,6 +103,11 @@ void usage()
            "  --no-ramp         ignore the game's gamma ramp (no fades, half brightness: the raw framebuffer)\n"
            "  --no-aa           no anti-aliasing (default: edge-directed post filter; F9 toggles)\n"
            "  --no-seamfill     do not fill hairline cracks between geometry pieces (destructible walls)\n"
+           "  --reload-blur     the original's depth blur while reloading, off by default (PC SETTINGS > MODS)\n"
+           "  --language L      en (default) or ptbr: the game's text and the port's menus (PC SETTINGS > MODS)\n"
+           "  --draw-distance N LOD and draw distances x N: 1 (the game's), 2 (default), 4, 8, 12 or 16 (PC SETTINGS > MODS)\n"
+           "  --controller      prompts and menus show the controller's buttons (PC SETTINGS > INPUT)\n"
+           "  --no-textures     no HD texture pack (mods\\replacements; PC SETTINGS > MODS)\n"
            "  --perf-at S:D     record performance for D seconds from S seconds after the first frame (perf\\)\n"
            "  --timer-vblank    vblank from a 59.94 Hz timer instead of the display's refresh (default: follow a ~60 Hz display)\n"
            "  --force           run an XBE other than the known NTSC-U build\n"
@@ -173,6 +183,7 @@ bool parse_args()
         else if (a == L"--no-ramp") g_cfg.ramp = false;
         else if (a == L"--no-aa") { g_cfg.aa = false; settings_mark_cli("aa"); }
         else if (a == L"--no-seamfill") { g_cfg.seam_fill = false; settings_mark_cli("seamfill"); }
+        else if (a == L"--reload-blur") { g_cfg.reload_blur = true; settings_mark_cli("reload_blur"); }
         else if (a == L"--rescale-at") { if (!next(g_cfg.rescale_at)) return false; }
         else if (a == L"--reverb-gain") {
             settings_mark_cli("reverb_gain");
@@ -209,7 +220,20 @@ bool parse_args()
             std::wstring v;
             if (!next(v)) return false;
             g_cfg.fov = std::clamp((float)_wtof(v.c_str()), 50.0f, 120.0f);
-        } else if (a == L"--game-override") {
+        } else if (a == L"--language") {
+            settings_mark_cli("language");
+            std::wstring v;
+            if (!next(v)) return false;
+            int l = lang::from_code(narrow(v).c_str());
+            if (l >= 0) g_cfg.language = l;
+        } else if (a == L"--draw-distance") {
+            settings_mark_cli("draw_distance");
+            std::wstring v;
+            if (!next(v)) return false;
+            g_cfg.draw_distance = std::clamp(_wtoi(v.c_str()), 1, 16);
+        } else if (a == L"--controller") { g_cfg.input_pad = true; settings_mark_cli("input"); }
+        else if (a == L"--no-textures") { g_cfg.textures = false; settings_mark_cli("textures"); }
+        else if (a == L"--game-override") {
             if (!next(g_cfg.game_override)) return false;
         } else if (a == L"--press-file") {
             if (!next(g_cfg.press_file)) return false;
@@ -433,7 +457,7 @@ int run(void *reserve, unsigned reserve_size)
 
     log_init(g_cfg.log_path);
     g_exit_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    logc("BlackHD-PC " BLACK_VERSION " (blackrt) - XBE %s, hdd %s, log %s%s%s", narrow(g_cfg.xbe_path).c_str(), narrow(g_cfg.hdd_dir).c_str(),
+    logc("BlackDefinitiveHDPC " BLACK_VERSION " (blackrt) - XBE %s, hdd %s, log %s%s%s", narrow(g_cfg.xbe_path).c_str(), narrow(g_cfg.hdd_dir).c_str(),
          narrow(g_cfg.log_path).c_str(), g_cfg.trace ? ", trace" : "", g_cfg.strict ? ", strict" : "");
     logf("address-space stub: reserve %p + 0x%x", reserve, reserve_size);
 
@@ -477,6 +501,13 @@ int run(void *reserve, unsigned reserve_size)
     if (known_build) install_mouselook_patches();
     if (known_build) install_autoaim_patch();
     if (known_build) install_fov_patch();
+    if (known_build) install_shake_patch();
+    if (known_build) install_effects_patches();
+    if (known_build) install_drawdist_patches();
+    if (known_build) {
+        saveimport_scan();
+        install_saveimport_patch();
+    }
     if (known_build) install_reticle_colours();
     if (known_build) audio_defaults_init();
     if (known_build) install_fe_calls();

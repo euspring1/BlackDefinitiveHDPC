@@ -15,6 +15,7 @@ const std::vector<Group> &groups();
 // The MODS page (mods.h): one row per mod found under <port>\mods. Kept out of groups() because the game's Options
 // page copy has room for exactly four rows; the pause menu's PC SETTINGS page (fe/pause_ui.cpp) shows it too.
 const Group &mods_group();
+const Group &input_group(); // INPUT: keyboard and mouse or controller prompts, the row below MODS
 
 int count();                        // rows; row n shows its value in &PC_V<n> (fe/vars.h)
 const char *label(int n);           // the row's caption

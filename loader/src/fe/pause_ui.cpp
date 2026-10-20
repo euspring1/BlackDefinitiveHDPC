@@ -16,6 +16,7 @@
 #include "fe/bind_list.h"
 #include "fe/pc_settings.h"
 #include "fe/vars.h"
+#include "lang.h"
 
 #include <algorithm>
 #include <cmath>
@@ -46,6 +47,7 @@ std::vector<pcset::Group> groups()
         if (!h.rows.empty()) out.push_back(h);
     }
     out.push_back(pcset::mods_group()); // the mods screen (mods.h) is only reachable from here
+    out.push_back(pcset::input_group());
     return out;
 }
 
@@ -54,10 +56,10 @@ std::vector<Row> rows(std::wstring *title)
     std::vector<Row> out;
     auto gs = groups();
     if (g_screen == kMenu) {
-        *title = L"PC SETTINGS";
+        *title = widen(lang::tr("PC SETTINGS"));
         for (int i = 0; i < (int)gs.size() && i < kRows; i++) out.push_back({Row::Link, i});
     } else if (g_screen == kKeys) {
-        *title = L"KEY BINDINGS";
+        *title = widen(lang::tr("KEY BINDINGS"));
         for (int i = 0; i < bindlist::kRows; i++) out.push_back({Row::Key, i});
     } else if (g_screen >= 0 && g_screen < (int)gs.size()) {
         *title = widen(gs[g_screen].title);
@@ -74,7 +76,7 @@ std::wstring caption(const Row &r)
 {
     if (r.kind == Row::Key) return bindlist::row_label(r.id);
     if (r.kind == Row::Link) {
-        if (r.id == kKeys) return L"KEY BINDINGS";
+        if (r.id == kKeys) return widen(lang::tr("KEY BINDINGS"));
         auto gs = groups();
         return r.id >= 0 && r.id < (int)gs.size() ? widen(gs[r.id].title) : L"";
     }

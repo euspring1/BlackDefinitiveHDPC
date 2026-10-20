@@ -1,6 +1,6 @@
-# BlackHD-PC
+# BlackDefinitiveHDPC
 
-**BlackHD-PC** by **Spring — Spring Code**
+**BlackDefinitiveHDPC** by **Spring — Spring Code**
 
 A native Windows version of **BLACK** (Criterion Games, 2006), built from the original Xbox release (NTSC-U), tuned for
 modern PCs: high frame rates, HD output, a PC-style control scheme, keyboard and mouse prompts everywhere, and an
@@ -10,7 +10,7 @@ The original game code runs directly on the PC; the parts of the Xbox it talks t
 controller library) are replaced by PC code. **No game code or data is included: you need your own copy of the
 game.**
 
-## What BlackHD-PC adds
+## What BlackDefinitiveHDPC adds
 
 | Area | Improvement |
 |---|---|
@@ -31,9 +31,14 @@ game.**
 | FPS counter | Optional frame rate counter on screen (off by default). |
 | Subtitles | Optional `.srt` subtitles for the movies (**off** by default, as some versions of the game already have them in the videos). |
 | Graphics | Anisotropic filtering (default **16X**), window size (default **1080p**) and resolution scale (default **4X**). |
-| HD texture pack | Uses a PCSX2 texture pack of the PS2 version (for example *BLACK HD Reimagined*): each game texture is matched to its HD version by its picture, the first time it is seen, and loaded into video memory. Unmatched textures stay as they are. |
+| HD texture pack | Uses a PCSX2 texture pack of the PS2 version (currently *BLACK_HD_Reimagined_Texture_Pack*, in `port\mods\replacements`): each game texture is matched to its HD version by its picture, the first time it is seen, and loaded into video memory. Unmatched textures stay as they are. |
 | Textures | Texture replacement: a PNG in `port\textures\` named after a game texture replaces it (any size, mipmapped). `--dump-textures` saves the game's textures to `port\textures\dump\` to find their names. |
 | Performance | Accurate frame pacing above 60 fps without a busy core: the game's vertical blank runs at the chosen rate on a separate CPU. |
+| Draw distance | Level of detail and draw distances 1X (the game's), **2X** (default), 4X, 8X, 12X or 16X, in PC SETTINGS > MODS. See *Performance notes*. |
+| Language | **English** (default) or **Brazilian Portuguese** for the game's text and every PC SETTINGS page, in PC SETTINGS > MODS (from the next start). The Portuguese text comes with the port. |
+| Input | PC SETTINGS > INPUT: **MOUSE/KEYBOARD** (default, prompts show your keys) or **CONTROLLER** (prompts and menus show the controller's buttons), from the next start. |
+| Camera and effects | Camera shake on explosions (on by default) and the reload blur (off by default) can be turned on or off in PC SETTINGS > MODS. |
+| V-Sync | Optional, in PC SETTINGS > MODS (off by default). |
 
 Plus everything of the base port: any render resolution, anti-aliasing, widescreen, adjustable field of view, mouse
 look, bindable keys, XInput controllers, borderless fullscreen, settings in the game's own menus.
@@ -50,7 +55,7 @@ look, bindable keys, XInput controllers, borderless fullscreen, settings in the 
    folder to `game`. Only the NTSC-U build works: `game\default.xbe` must have SHA-256
    `DF2739C372D254A90AEECCF5971D12097F22D89FBB90DB021FDA96DD4DEB68F6`
    (PowerShell: `Get-FileHash game\default.xbe -Algorithm SHA256`).
-2. Extract `BlackHD-PCv1.2.zip` next to `game`, so the `port` folder sits beside it:
+2. Extract `BlackDefinitiveHDPCv1.0.zip` next to `game`, so the `port` folder sits beside it:
 
    ```
    BLACK\
@@ -71,10 +76,19 @@ the same way, as long as `default.xbe` is the NTSC-U one.
 
 ### Optional: HD texture pack
 
-No textures are included. To use a PCSX2 texture pack of BLACK (PS2, SLUS-21376), put its `replacements` folder
-inside `port\textures` (`port\textures\replacements`), or write its path in `black.ini` (`texture_pack = C:\...`). The first start indexes the pack (a few seconds, cached in `port\cache`).
-`port\cache\texpack.map` lists every match; changing a line's file to `-` keeps the game's own texture there.
-`texture_pack = off` turns it off.
+No textures are included. BlackDefinitiveHDPC currently uses the **BLACK_HD_Reimagined_Texture_Pack** (PCSX2 texture pack of
+the PS2 version, SLUS-21376). Download it and put its `replacements` folder inside `port\mods`:
+
+```
+port\
+  mods\
+    replacements\
+      ...the pack's .dds / .png files
+```
+
+Or write the pack's path in `black.ini` (`texture_pack = C:\...`). The first start indexes the pack (a few seconds,
+cached in `port\cache`). `port\cache\texpack.map` lists every match; changing a line's file to `-` keeps the game's
+own texture there. PC SETTINGS > MODS > TEXTURES turns the pack on or off (from the next start).
 
 ## Controls (keyboard and mouse)
 
@@ -111,13 +125,26 @@ In the game: Options > PC SETTINGS (main menu) and PC SETTINGS in the pause menu
 | DISPLAY | aspect ratio, frame rate (both apply from the next start), geometry seam fill, effects at Xbox size, brightness, gamma |
 | AUDIO AND GAME | room reverb, skip any movie, movie subtitles, FPS counter, field of view, weapon field of view |
 | CONTROLS | mouse sensitivity, mouse inversion, auto-aim (off / on / controller only), aim (hold / toggle), crouch (hold / profile option), key bindings |
-| MODS | each mod in `port\mods\`, on or off |
+| MODS | camera shake, reload blur, V-Sync, HD textures (from the next start), language (from the next start), draw distance |
+| INPUT | input device: mouse/keyboard or controller prompts (from the next start) |
 
 The aspect ratio is only on the main menu's pages; everything else is also in the pause menu.
 
 First start (no `black.ini` settings yet): 120 fps, window 1080p, resolution scale 4X, anisotropic filtering 16X,
 field of view 100, weapon field of view 85, HD crosshair, hold to aim and crouch, auto-aim for the controller only,
-subtitles and FPS counter off.
+subtitles and FPS counter off, camera shake on, reload blur off, V-Sync off, HD textures on, English, draw distance
+2X, mouse/keyboard prompts.
+
+### Performance notes
+
+- **Draw distance**: 4X and above draw many more objects in open areas and forests and can cost a lot of frame rate
+  (measured in a forest: about 200 fps at 1X, 135 fps at 4X, 85 fps at 16X). Like on the Xbox, the game runs on one
+  CPU core, so this depends mostly on the CPU. When a frame takes longer than the chosen frame rate allows, the game
+  runs slower than real time, so pick a draw distance that keeps your frame rate.
+- **Resolution scale**: 4X (default) renders above 4K; lower it on weaker graphics cards.
+- **Frame rate**: above 120 fps needs a fast CPU for the same reason as the draw distance.
+- **HD textures**: use more video memory; the first time a texture is seen it is matched to the pack, which can cause
+  a short hitch.
 
 Also in `port\black.ini`:
 
@@ -130,7 +157,7 @@ Also in `port\black.ini`:
 | `crouch_hold = 1` | crouch while the key is held |
 | `aim_hold = 1` | aim while the key is held |
 | `autoaim = 2` | 0 off, 1 on, 2 controller only |
-| `texture_pack =` | folder of an HD texture pack (empty = `port\textures\replacements`, `off` = none) |
+| `texture_pack =` | folder of an HD texture pack (empty = `port\mods\replacements`, `off` = none) |
 | `texture_pack_max = 2048` | largest pack texture size loaded (bigger ones use a smaller mip) |
 | `fov = 100.0` | field of view in play (70 = the game's) |
 | `viewmodel_fov = 85.0` | weapon field of view (70 = the game's) |
@@ -138,6 +165,13 @@ Also in `port\black.ini`:
 | `window = 0x1080` | window size (`WIDTHxHEIGHT`; width 0 = from the aspect ratio) |
 | `fpscounter = 0` | frame rate counter on screen |
 | `subtitles = 0` | `.srt` subtitles over the movies |
+| `camera_shake = 1` | the view shakes at explosions |
+| `reload_blur = 0` | the reload's depth blur |
+| `vsync = 0` | V-Sync |
+| `textures = 1` | the HD texture pack in `port\mods\replacements` |
+| `language = en` | `en` or `ptbr` |
+| `draw_distance = 2` | 1, 2, 4, 8, 12 or 16 |
+| `input = keyboard` | `keyboard` or `controller` prompts |
 
 `black.exe --help` lists the command-line options.
 
@@ -156,7 +190,7 @@ This builds `black.exe` and `blackrt.dll`.
 
 ## Credits
 
-**BlackHD-PC** — Spring, **Spring Code**: all the improvements listed above.
+**BlackDefinitiveHDPC** — Spring, **Spring Code**: all the improvements listed above.
 
 ### Projects studied
 
@@ -178,7 +212,7 @@ This builds `black.exe` and `blackrt.dll`.
 
 ## License
 
-BlackHD-PC is free software under the GNU General Public License, version 2 or (at your option) any later version,
+BlackDefinitiveHDPC is free software under the GNU General Public License, version 2 or (at your option) any later version,
 like the project it is based on. See `LICENSE`.
 
 ## Legal
