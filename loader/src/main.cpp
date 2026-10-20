@@ -233,6 +233,12 @@ bool parse_args()
             if (!next(v)) return false;
             g_cfg.draw_distance = std::clamp(_wtoi(v.c_str()), 1, 16);
         } else if (a == L"--no-vertex-cache") g_cfg.vertex_cache = false;
+        else if (a == L"--cheats") { // tests: every cheat on
+            g_cfg.cheat_unlock_all = g_cfg.cheat_god = g_cfg.cheat_health_packs = true;
+            settings_mark_cli("cheat_unlock_all");
+            settings_mark_cli("cheat_god");
+            settings_mark_cli("cheat_health_packs");
+        }
         else if (a == L"--controller") { g_cfg.input_pad = true; settings_mark_cli("input"); }
         else if (a == L"--no-textures") { g_cfg.textures = false; settings_mark_cli("textures"); }
         else if (a == L"--game-override") {

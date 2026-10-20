@@ -102,6 +102,9 @@ struct Config {
     bool autoaim = true;       // the game's view pull toward targets (input/autoaim.cpp; --autoaim, PC SETTINGS)
     bool autoaim_pad_only = true; // with autoaim: only while the controller is the device in use (black.ini autoaim = 2)
     float fov = 100.0f;        // horizontal field of view in play, degrees (fov.cpp; --fov, PC SETTINGS; the game's is 70)
+    bool cheat_unlock_all = false;   // PC SETTINGS > CHEATS (cheats.cpp)
+    bool cheat_god = false;
+    bool cheat_health_packs = false;
     bool skip_intro = true;    // black.ini skip_intro: the boot logo films and the film after PRESS START stop at once
     bool skip_movies = true;   // A / START skip any movie, also unseen ones (input/movies.cpp; --no-movie-skip, PC SETTINGS)
     bool known_build = false;  // the XBE is the NTSC-U build the address tables are for (main.cpp)

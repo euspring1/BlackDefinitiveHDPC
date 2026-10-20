@@ -284,12 +284,20 @@ const Row kRows[] = {
     {"INPUT DEVICE", 2, [] { return (int)(g_cfg.input_pad_next >= 0 ? g_cfg.input_pad_next != 0 : g_cfg.input_pad); },
      [](int i) { g_cfg.input_pad_next = (i != 0) == g_cfg.input_pad ? -1 : i; },
      [](int i) { return std::wstring(i ? L"CONTROLLER" : L"MOUSE/KEYBOARD") + ((i != 0) != g_cfg.input_pad ? L" (NEXT START)" : L""); }},
+    // CHEATS (cheats.cpp)
+    {"UNLOCK ALL", 2, [] { return (int)g_cfg.cheat_unlock_all; }, [](int i) { g_cfg.cheat_unlock_all = i != 0; },
+     [](int i) { return on_off(i); }},
+    {"GOD MODE", 2, [] { return (int)g_cfg.cheat_god; }, [](int i) { g_cfg.cheat_god = i != 0; },
+     [](int i) { return on_off(i); }},
+    {"INFINITE HEALTH PACKS", 2, [] { return (int)g_cfg.cheat_health_packs; }, [](int i) { g_cfg.cheat_health_packs = i != 0; },
+     [](int i) { return on_off(i); }},
 };
 constexpr int kRowN = sizeof kRows / sizeof kRows[0];
 constexpr int kKeyBindings = 15;
 constexpr int kAimMode = 16, kCrouchMode = 17, kWeaponFov = 18, kFpsCounter = 19, kSubtitles = 20;
 constexpr int kScale = 21, kAnisoRow = 22, kWindowRow = 23, kCameraShake = 24, kVsync = 25;
 constexpr int kReloadBlur = 26, kTextures = 27, kLanguage = 28, kDrawDistance = 29, kInputDevice = 30;
+constexpr int kCheatUnlock = 31, kCheatGod = 32, kCheatPacks = 33;
 // Rows past the fixed ones are the mods found in <port>\mods: one ON/OFF line each (mods.h).
 int mod_count() { return (int)mods::list().size(); }
 
@@ -325,6 +333,13 @@ const Group &mods_group()
 const Group &input_group()
 {
     static const Group g = {"PCInput", lang::tr("INPUT"), {kInputDevice}};
+    return g;
+}
+
+// CHEATS: the row below INPUT
+const Group &cheats_group()
+{
+    static const Group g = {"PCCheats", lang::tr("CHEATS"), {kCheatUnlock, kCheatGod, kCheatPacks}};
     return g;
 }
 
@@ -406,6 +421,7 @@ void fill_page(int group)
     if (group >= 0 && group < (int)gs.size()) rows = &gs[group].rows;
     else if (group == (int)gs.size()) rows = &mods_group().rows; // the MODS page, after the four groups
     else if (group == (int)gs.size() + 1) rows = &input_group().rows; // INPUT, after MODS
+    else if (group == (int)gs.size() + 2) rows = &cheats_group().rows; // CHEATS, after INPUT
     if (!rows) return;
     for (int i = 0; i < fevar::kRows; i++) {
         int n = i < (int)rows->size() ? (*rows)[i] : -1;

@@ -1215,6 +1215,8 @@ void pc_menu(Movie &mv)
     add_menu_row(mv, mv.character(27), lang::tr("MODS"), "Mods_Text", 25.9f, 55, 21, 22);
     // INPUT: a sixth row below MODS (pcset::input_group), revealed with it (the movie has no later reveal frame)
     add_menu_row(mv, mv.character(27), lang::tr("INPUT"), "Input_Text", 2 * 25.9f, 55, 21, 61, 60); // depths the movie leaves free
+    // CHEATS: a seventh row below INPUT (pcset::cheats_group)
+    add_menu_row(mv, mv.character(27), lang::tr("CHEATS"), "Cheats_Text", 3 * 25.9f, 55, 21, 63, 62);
     mv.rename_function(mv.main_script(), "PagePrepare", "PagePrepare0");
     mv.rename_function(mv.main_script(), "Update", "Update0");
     Classes classes = own_classes_prepare(mv);
@@ -1223,9 +1225,10 @@ void pc_menu(Movie &mv)
     heal_update(a, "controllerButton", classes, "pcs");
     // the rows this page shows, top to bottom, as the pointer finds them: the game's own four and the port's MODS row
     heal_update(a, "modsButton", classes, "pcs",
-                {"controllerButton", "soundButton", "pictureButton", "Playerprofile", "modsButton", "inputButton"});
+                {"controllerButton", "soundButton", "pictureButton", "Playerprofile", "modsButton", "inputButton", "cheatsButton"});
     a.push(Value::S("modsButton")).define_local2();
     a.push(Value::S("inputButton")).define_local2();
+    a.push(Value::S("cheatsButton")).define_local2();
     a.push(Value::S("pcOver")).define_local2(); // the row under the pointer, and the one it focused last
     a.push(Value::S("pcHover")).define_local2();
     a.function2("PagePrepare", [&groups](Asm &f) {
@@ -1238,10 +1241,14 @@ void pc_menu(Movie &mv)
         set(f, {"modsButton"}, "buttonUp", at({"Playerprofile"}));
         set(f, {"modsButton"}, "buttonDown", at({"inputButton"}));
         set(f, {"inputButton"}, "buttonUp", at({"modsButton"}));
-        set(f, {"inputButton"}, "buttonDown", at({"controllerButton"}));
-        set(f, {"controllerButton"}, "buttonUp", at({"inputButton"}));
+        make(f, "cheatsButton", "BkMenuButton", {at({"Main", "TextAnim", "Cheats_Text"})});
+        set(f, {"inputButton"}, "buttonDown", at({"cheatsButton"}));
+        set(f, {"cheatsButton"}, "buttonUp", at({"inputButton"}));
+        set(f, {"cheatsButton"}, "buttonDown", at({"controllerButton"}));
+        set(f, {"controllerButton"}, "buttonUp", at({"cheatsButton"}));
         set(f, {"modsButton"}, "actionSelectPage", S(pcset::mods_group().page));
         set(f, {"inputButton"}, "actionSelectPage", S(pcset::input_group().page));
+        set(f, {"cheatsButton"}, "actionSelectPage", S(pcset::cheats_group().page));
         call(f, {"MyMenu"}, "SetFunctionBack"); // no argument: not Options' own back (save and leave)
         call(f, {"MyMenu"}, "SetPageBack", {S("OptionsMenuXbox")});
         f.push_true().ret();
@@ -1250,11 +1257,13 @@ void pc_menu(Movie &mv)
         call_function(f, "PageRelease0");
         call(f, {"modsButton"}, "Release");
         call(f, {"inputButton"}, "Release");
+        call(f, {"cheatsButton"}, "Release");
     });
     a.function2("PageDestruct", [](Asm &f) {
         call_function(f, "PageDestruct0");
         f.push(Value::S("modsButton")).delete2().pop();
         f.push(Value::S("inputButton")).delete2().pop();
+        f.push(Value::S("cheatsButton")).delete2().pop();
     });
     mv.append_control(mv.main, 0, mv.do_action(a.finish()));
 }
@@ -1870,6 +1879,10 @@ bool fe_build_pages(const std::wstring &game_dir, const std::wstring &out_root)
         Movie input(sound);
         choice_page(input, ig.title, group_rows(ig, false), "PCSettings", true, 5);
         add_movie(c, lower(ig.page), input.build());
+        const pcset::Group &cg = pcset::cheats_group(); // and CHEATS, the row below INPUT
+        Movie cheats(sound);
+        choice_page(cheats, cg.title, group_rows(cg, false), "PCSettings", true, 6);
+        add_movie(c, lower(cg.page), cheats.build());
         Movie opt(options);
         options_row(opt);
         c.movies["optionsmenuxbox"] = opt.build();

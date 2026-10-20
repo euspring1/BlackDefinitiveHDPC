@@ -7,6 +7,7 @@
 #include "d3d/fps.h"
 #include "d3d/subtitles.h"
 #include "fe/restart.h"
+#include "cheats.h"
 
 #include "d3d/dispatch.h"
 #include "d3d/draw.h"
@@ -1321,6 +1322,7 @@ uint32_t __stdcall D3DDevice_Swap(uint32_t Flags)
     fps_tick(host_w(g_width), host_h(g_height));       // the frame rate counter, same place
     cursor_tick(host_w(g_width), host_h(g_height));    // the port's own menu cursor, over everything
     restart_poll();                                    // a mod changed and the player is back at the main menu
+    cheats_frame();                                    // PC SETTINGS > CHEATS > UNLOCK ALL
     present_backbuffer();
     capture_frame();
     uint32_t frames = ++g_frame_count;

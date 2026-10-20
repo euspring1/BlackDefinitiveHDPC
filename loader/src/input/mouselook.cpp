@@ -24,6 +24,7 @@
 // stores it). Later readers in the frame are the weapon sway; the values are rebuilt from the pad next frame.
 #include "input/mouselook.h"
 
+#include "cheats.h"
 #include "common.h"
 
 #include <algorithm>
@@ -134,6 +135,7 @@ extern "C" void __cdecl ml_sway(uint8_t *ctrl)
     // crouch action while the profile's toggle option +0x102 is set, and crouches while it is held when it is clear.
     if (g_cfg.crouch_hold) ctrl[0x102] = 0;
     uint32_t cam = *(const uint32_t *)(ctrl + 0x8C);
+    if (cam) cheats_player((uint8_t *)(uintptr_t)cam); // PC SETTINGS > CHEATS
     uint32_t prof = cam ? *(const uint32_t *)(uintptr_t)(cam + 0x29C) : 0;
     g_aiming = prof ? *(const uint8_t *)(uintptr_t)(prof + 0x105) != 0 : -1;
     g_weapon = WeaponState();

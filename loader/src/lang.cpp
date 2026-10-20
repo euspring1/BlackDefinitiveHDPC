@@ -60,6 +60,10 @@ const Pair kTexts[] = {
     {"INPUT DEVICE", "DISPOSITIVO"},
     {"MOUSE/KEYBOARD", "MOUSE/TECLADO"},
     {"CONTROLLER", "CONTROLE"},
+    {"CHEATS", "TRAPAÇAS"},
+    {"UNLOCK ALL", "DESTRAVAR TUDO"},
+    {"GOD MODE", "INVENCÍVEL"},
+    {"INFINITE HEALTH PACKS", "KITS MÉDICOS INFINITOS"},
     // values
     {"ON", "LIGADO"},
     {"OFF", "DESLIGADO"},

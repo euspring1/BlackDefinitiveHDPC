@@ -34,6 +34,7 @@ struct Row {
 };
 
 int g_screen = kMenu, g_focus, g_layout, g_frames = 26;
+int g_menu_top; // the menu of groups scrolls when there are more groups than rows (CHEATS is the seventh)
 std::vector<std::pair<int, int>> g_stack; // (screen, focused row) to go back to
 
 std::vector<pcset::Group> groups()
@@ -48,6 +49,7 @@ std::vector<pcset::Group> groups()
     }
     out.push_back(pcset::mods_group()); // the mods screen (mods.h) is only reachable from here
     out.push_back(pcset::input_group());
+    out.push_back(pcset::cheats_group());
     return out;
 }
 
@@ -57,7 +59,8 @@ std::vector<Row> rows(std::wstring *title)
     auto gs = groups();
     if (g_screen == kMenu) {
         *title = widen(lang::tr("PC SETTINGS"));
-        for (int i = 0; i < (int)gs.size() && i < kRows; i++) out.push_back({Row::Link, i});
+        g_menu_top = std::clamp(g_menu_top, 0, std::max(0, (int)gs.size() - kRows));
+        for (int i = g_menu_top; i < (int)gs.size() && i < g_menu_top + kRows; i++) out.push_back({Row::Link, i});
     } else if (g_screen == kKeys) {
         *title = widen(lang::tr("KEY BINDINGS"));
         for (int i = 0; i < bindlist::kRows; i++) out.push_back({Row::Key, i});
@@ -97,6 +100,7 @@ void open(int bar_frames)
 {
     if (bar_frames >= 2 && bar_frames <= 255) g_frames = bar_frames;
     g_stack.clear();
+    g_menu_top = 0;
     go(kMenu, 0);
     refresh();
 }
@@ -107,6 +111,23 @@ void row(int i, int id, bool moved)
     std::vector<Row> rs = rows(&title);
     if (i < 0 || i >= (int)rs.size()) return;
     const Row &r = rs[i];
+    if (g_screen == kMenu && !moved) { // the menu of groups: up / down at its ends scroll it
+        int groups_n = (int)groups().size();
+        if (id == 2 && i == (int)rs.size() - 1 && g_menu_top + kRows < groups_n) {
+            g_menu_top++;
+            g_focus = i;
+            g_layout++;
+            refresh();
+            return;
+        }
+        if (id == 1 && i == 0 && g_menu_top > 0) {
+            g_menu_top--;
+            g_focus = 0;
+            g_layout++;
+            refresh();
+            return;
+        }
+    }
     if (r.kind == Row::Key) bindlist::input(r.id, id, moved);
     else if (r.kind == Row::Link && id == 5) {
         g_stack.push_back({g_screen, i});
@@ -143,7 +164,8 @@ void refresh()
     std::wstring title;
     std::vector<Row> rs = rows(&title);
     int n = (int)rs.size();
-    bool wrap = g_screen != kKeys; // the key list scrolls at its ends instead
+    // the key list scrolls at its ends instead, and so does the menu of groups when it holds more than the rows
+    bool wrap = g_screen != kKeys && !(g_screen == kMenu && (int)groups().size() > kRows);
     fe_var_set(fevar::kTitle, title);
     for (int i = 0; i < kRows; i++) {
         uint32_t state = 0;

@@ -39,6 +39,8 @@ parts of the Xbox it talks to (kernel, Direct3D 8, DirectSound, controller libra
 | Input | PC SETTINGS > INPUT: **MOUSE/KEYBOARD** (default, prompts show your keys) or **CONTROLLER** (prompts and menus show the controller's buttons), from the next start. |
 | Camera and effects | Camera shake on explosions (on by default) and the reload blur (off by default) can be turned on or off in PC SETTINGS > MODS. |
 | V-Sync | Optional, in PC SETTINGS > MODS (off by default). |
+| Cheats | PC SETTINGS > CHEATS: **UNLOCK ALL** (every mission on every difficulty, the Black Ops difficulty, the M16A2 and the silver weapons with unlimited ammo, as a 100% profile; saved with the profile, so it stays after the cheat is turned off), **GOD MODE** and **INFINITE HEALTH PACKS**. The game's own BFG profile-name codes still work. |
+| Settings shortcut | **F1** opens PC SETTINGS from play, the pause menu or the main menu. |
 | Saved games | Use a saved game from an Xbox (or from another language of the game): put its folder in `game\savedata\Partition1\UDATA\45410083\` (the folder with `SaveMeta.xbx` and the profile file inside). At the next start the port signs it again for the PC and, if it was made in another language ("Profile" / "Perfil"), renames it to the language being played, so the game loads it. |
 
 Plus everything of the base port: any render resolution, anti-aliasing, widescreen, adjustable field of view, mouse
@@ -56,7 +58,7 @@ look, bindable keys, XInput controllers, borderless fullscreen, settings in the 
    with the game's files. Only the NTSC-U build works: `game\default.xbe` must have SHA-256
    `DF2739C372D254A90AEECCF5971D12097F22D89FBB90DB021FDA96DD4DEB68F6`
    (PowerShell: `Get-FileHash game\default.xbe -Algorithm SHA256`).
-2. Extract `BlackDefinitiveHDPCv1.0.zip` into the `game` folder:
+2. Extract `BlackDefinitiveHDPCv1.2.zip` into the `game` folder:
 
    ```
    game\
@@ -128,6 +130,7 @@ In the game: Options > PC SETTINGS (main menu) and PC SETTINGS in the pause menu
 | CONTROLS | mouse sensitivity, mouse inversion, auto-aim (off / on / controller only), aim (hold / toggle), crouch (hold / profile option), key bindings |
 | MODS | camera shake, reload blur, V-Sync, HD textures (from the next start), language (from the next start), draw distance |
 | INPUT | input device: mouse/keyboard or controller prompts (from the next start) |
+| CHEATS | unlock all, god mode, infinite health packs |
 
 The aspect ratio is only on the main menu's pages; everything else is also in the pause menu.
 
@@ -173,6 +176,7 @@ Also in `game\black.ini`:
 | `language = en` | `en` or `ptbr` |
 | `draw_distance = 1` | 1, 2, 4, 8, 12 or 16 |
 | `input = keyboard` | `keyboard` or `controller` prompts |
+| `cheat_unlock_all = 0`, `cheat_god = 0`, `cheat_health_packs = 0` | the CHEATS page |
 | `skip_intro = 1` | skip the logo, credits and intro films at start (straight to PRESS START, then the main menu) |
 
 `black.exe --help` lists the command-line options.
