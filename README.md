@@ -25,21 +25,21 @@ game.**
 | Prompts | Every Xbox button icon replaced by the key you bound: hints ("[X] to use the health packs"), pick-up and swap prompts ("Press [F] to pick up"), "PRESS ENTER" on the title screen and the menus' legend ([ARROWS] select, [ENTER] confirm, [BACKSPACE] back). Prompts follow your own bindings. |
 | Menus | Controller options readable in the Portuguese translation (YES / NO instead of overlapping ON / OFF words). |
 | Mouse in menus | The row under the cursor is highlighted; left click confirms (or changes the value), right click goes back, the wheel scrolls. The keyboard keeps the highlight until the mouse is moved. |
-| Mods | A `port\mods\` folder: each mod is a folder whose `game\` files replace the game's. PC SETTINGS > MODS turns each one on or off; the game restarts by itself when you return to the main menu. |
+| Mods | A `game\mods\` folder: each mod is a folder whose `game\` files replace the game's. PC SETTINGS > MODS turns each one on or off; the game restarts by itself when you return to the main menu. |
 | Field of view | Field of view (default **100**) and **weapon field of view** (default **85**) side by side in PC SETTINGS > AUDIO AND GAME. |
 | HUD | With the 16:9 aspect ratio the HUD's corner panels keep their original shape instead of being stretched; at 4:3 the HUD is the original. |
 | FPS counter | Optional frame rate counter on screen (off by default). |
 | Subtitles | Optional `.srt` subtitles for the movies (**off** by default, as some versions of the game already have them in the videos). |
 | Graphics | Anisotropic filtering (default **16X**), window size (default **1080p**) and resolution scale (default **4X**). |
-| HD texture pack | Uses a PCSX2 texture pack of the PS2 version (currently *BLACK_HD_Reimagined_Texture_Pack*, in `port\mods\replacements`): each game texture is matched to its HD version by its picture, the first time it is seen, and loaded into video memory. Unmatched textures stay as they are. |
-| Textures | Texture replacement: a PNG in `port\textures\` named after a game texture replaces it (any size, mipmapped). `--dump-textures` saves the game's textures to `port\textures\dump\` to find their names. |
+| HD texture pack | Uses a PCSX2 texture pack of the PS2 version (currently *BLACK_HD_Reimagined_Texture_Pack*, in `game\mods\replacements`): each game texture is matched to its HD version by its picture, the first time it is seen, and loaded into video memory. Unmatched textures stay as they are. |
+| Textures | Texture replacement: a PNG in `game\textures\` named after a game texture replaces it (any size, mipmapped). `--dump-textures` saves the game's textures to `game\textures\dump\` to find their names. |
 | Performance | Accurate frame pacing above 60 fps without a busy core: the game's vertical blank runs at the chosen rate on a separate CPU. |
 | Draw distance | Level of detail and draw distances 1X (the game's), **2X** (default), 4X, 8X, 12X or 16X, in PC SETTINGS > MODS. See *Performance notes*. |
 | Language | **English** (default) or **Brazilian Portuguese** for the game's text and every PC SETTINGS page, in PC SETTINGS > MODS (from the next start). The Portuguese text comes with the port. |
 | Input | PC SETTINGS > INPUT: **MOUSE/KEYBOARD** (default, prompts show your keys) or **CONTROLLER** (prompts and menus show the controller's buttons), from the next start. |
 | Camera and effects | Camera shake on explosions (on by default) and the reload blur (off by default) can be turned on or off in PC SETTINGS > MODS. |
 | V-Sync | Optional, in PC SETTINGS > MODS (off by default). |
-| Saved games | Use a saved game from an Xbox (or from another language of the game): put its folder in `port\savedata\Partition1\UDATA\45410083\` (the folder with `SaveMeta.xbx` and the profile file inside). At the next start the port signs it again for the PC and, if it was made in another language ("Profile" / "Perfil"), renames it to the language being played, so the game loads it. |
+| Saved games | Use a saved game from an Xbox (or from another language of the game): put its folder in `game\savedata\Partition1\UDATA\45410083\` (the folder with `SaveMeta.xbx` and the profile file inside). At the next start the port signs it again for the PC and, if it was made in another language ("Profile" / "Perfil"), renames it to the language being played, so the game loads it. |
 
 Plus everything of the base port: any render resolution, anti-aliasing, widescreen, adjustable field of view, mouse
 look, bindable keys, XInput controllers, borderless fullscreen, settings in the game's own menus.
@@ -52,43 +52,42 @@ look, bindable keys, XInput controllers, borderless fullscreen, settings in the 
 
 ## Installing
 
-1. Dump your disc and extract it with [extract-xiso](https://github.com/XboxDev/extract-xiso), then rename the extracted
-   folder to `game`. Only the NTSC-U build works: `game\default.xbe` must have SHA-256
+1. Dump your disc and extract it with [extract-xiso](https://github.com/XboxDev/extract-xiso): it makes a `game` folder
+   with the game's files. Only the NTSC-U build works: `game\default.xbe` must have SHA-256
    `DF2739C372D254A90AEECCF5971D12097F22D89FBB90DB021FDA96DD4DEB68F6`
    (PowerShell: `Get-FileHash game\default.xbe -Algorithm SHA256`).
-2. Extract `BlackDefinitiveHDPCv1.0.zip` next to `game`, so the `port` folder sits beside it:
+2. Extract `BlackDefinitiveHDPCv1.0.zip` into the `game` folder:
 
    ```
-   BLACK\
-     game\
-       default.xbe
-       ...
-     port\
-       black.exe
-       blackrt.dll
-       black.ini
+   game\
+     default.xbe
+     ...
+     black.exe
+     blackrt.dll
+     black.ini
+     mods\
    ```
 
-3. Start `port\black.exe`.
+3. Start `game\black.exe`.
 
 The port keeps saved games (`savedata\`), settings (`black.ini`), the log (`black.log`) and its menu files (`cache\`)
-in `port`. Nothing is written to `game`. A translated copy of the game (for example the Portuguese translation) works
-the same way, as long as `default.xbe` is the NTSC-U one.
+in the `game` folder; the game's own files are never changed. A translated copy of the game (for example the
+Portuguese translation) works the same way, as long as `default.xbe` is the NTSC-U one.
 
 ### Optional: HD texture pack
 
 No textures are included. BlackDefinitiveHDPC currently uses the **BLACK_HD_Reimagined_Texture_Pack** (PCSX2 texture pack of
-the PS2 version, SLUS-21376). Download it and put its `replacements` folder inside `port\mods`:
+the PS2 version, SLUS-21376). Download it and put its `replacements` folder inside `game\mods`:
 
 ```
-port\
+game\
   mods\
     replacements\
       ...the pack's .dds / .png files
 ```
 
 Or write the pack's path in `black.ini` (`texture_pack = C:\...`). The first start indexes the pack (a few seconds,
-cached in `port\cache`). `port\cache\texpack.map` lists every match; changing a line's file to `-` keeps the game's
+cached in `game\cache`). `game\cache\texpack.map` lists every match; changing a line's file to `-` keeps the game's
 own texture there. PC SETTINGS > MODS > TEXTURES turns the pack on or off (from the next start).
 
 ## Controls (keyboard and mouse)
@@ -147,7 +146,7 @@ subtitles and FPS counter off, camera shake on, reload blur off, V-Sync off, HD 
 - **HD textures**: use more video memory; the first time a texture is seen it is matched to the pack, which can cause
   a short hitch.
 
-Also in `port\black.ini`:
+Also in `game\black.ini`:
 
 | Key | Meaning |
 |---|---|
@@ -158,7 +157,7 @@ Also in `port\black.ini`:
 | `crouch_hold = 1` | crouch while the key is held |
 | `aim_hold = 1` | aim while the key is held |
 | `autoaim = 2` | 0 off, 1 on, 2 controller only |
-| `texture_pack =` | folder of an HD texture pack (empty = `port\mods\replacements`, `off` = none) |
+| `texture_pack =` | folder of an HD texture pack (empty = `game\mods\replacements`, `off` = none) |
 | `texture_pack_max = 2048` | largest pack texture size loaded (bigger ones use a smaller mip) |
 | `fov = 100.0` | field of view in play (70 = the game's) |
 | `viewmodel_fov = 85.0` | weapon field of view (70 = the game's) |
@@ -169,7 +168,7 @@ Also in `port\black.ini`:
 | `camera_shake = 1` | the view shakes at explosions |
 | `reload_blur = 0` | the reload's depth blur |
 | `vsync = 0` | V-Sync |
-| `textures = 1` | the HD texture pack in `port\mods\replacements` |
+| `textures = 1` | the HD texture pack in `game\mods\replacements` |
 | `language = en` | `en` or `ptbr` |
 | `draw_distance = 2` | 1, 2, 4, 8, 12 or 16 |
 | `input = keyboard` | `keyboard` or `controller` prompts |
