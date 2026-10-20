@@ -2,13 +2,13 @@
 
 **BlackDefinitiveHDPC** by **Spring — Spring Code**
 
-A native Windows version of **BLACK** (Criterion Games, 2006), built from the original Xbox release (NTSC-U), tuned for
-modern PCs: high frame rates, HD output, a PC-style control scheme, keyboard and mouse prompts everywhere, and an
-HD crosshair.
+An unofficial native Windows port (and playable on Linux) of **BLACK** (Criterion Games, 2006), made from the original
+Xbox version (NTSC-U).
 
-The original game code runs directly on the PC; the parts of the Xbox it talks to (kernel, Direct3D 8, DirectSound,
-controller library) are replaced by PC code. **No game code or data is included: you need your own copy of the
-game.**
+`black.exe` loads your own copy of the game's `default.xbe` and runs the original x86 game code directly on the PC; the
+parts of the Xbox it talks to (kernel, Direct3D 8, DirectSound, controller library) are replaced by PC code.
+
+**You need your own copy of the game. This repository and the release downloads contain no game code or data.**
 
 ## What BlackDefinitiveHDPC adds
 
