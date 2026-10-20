@@ -46,9 +46,24 @@ void movies_poll(uint16_t buttons, const uint8_t analog[8], bool enter)
     bool down = analog[0] > 30 || (buttons & 0x10) || enter; // A, START or Enter
     bool press = down && !g_was_down;
     g_was_down = down;
-    if (!g_cfg.skip_movies || !g_cfg.known_build) return;
+    if (!g_cfg.known_build) return;
     uint8_t *p = player();
     if (!p) return;
+    // black.ini skip_intro: the logo films at boot (LO_*), the credits after PRESS START (C_N_*) and the intro film
+    // (02_*) stop as they begin.
+    if (g_cfg.skip_intro && playing_once(p)) {
+        const char *name = (const char *)(p + kName);
+        const char *base = strrchr(name, '\\');
+        base = base ? base + 1 : name;
+        if (!_strnicmp(base, "LO_", 3) || !_strnicmp(base, "C_N_", 4) || !_strnicmp(base, "02_", 3)) {
+            p[kStop] = 1;
+            static char last[64];
+            if (strncmp(last, name, sizeof last - 1)) logf("movies: intro skipped (%s)", name);
+            strncpy(last, name, sizeof last - 1);
+            return;
+        }
+    }
+    if (!g_cfg.skip_movies) return;
     static bool told;
     if (!told) logf("movies: any movie can be skipped (player at %08x)", (uint32_t)(uintptr_t)p);
     told = true;

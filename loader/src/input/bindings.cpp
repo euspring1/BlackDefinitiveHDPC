@@ -157,6 +157,13 @@ int g_repeat = -1; // the held arrow that repeats
 ULONGLONG g_repeat_at;
 std::atomic<int> g_menu_input;            // pressed at the last poll, until the menus take it
 std::atomic<uint32_t> g_menu_input_frame; // when
+std::atomic<ULONGLONG> g_menu_input_time;  // when, in ms (take_menu_input)
+// F1: the way to PC SETTINGS, walked by the port: menu inputs (1-6), or 0 = wait for the page named in g_f1_pages
+std::vector<int> g_f1_steps;
+std::vector<std::string> g_f1_pages;
+size_t g_f1_at;
+ULONGLONG g_f1_next, g_f1_give_up;
+int g_f1_pause_polls; // in play: pause pressed for this many more polls
 bool g_menu_select;                       // Enter held (movies: skip)
 
 // A hint that stops the game (PRESS A TO CONTINUE: the HUD's hint code at 0x131C47 sets game object (*0x2D45F0) +
@@ -520,8 +527,9 @@ void script_hold(const std::string &name)
 
 int take_menu_input()
 {
+    // A key stays for 150 ms, not a number of frames: at 240 fps two frames are 8 ms, shorter than a page's lock-out.
     int v = g_menu_input.exchange(0);
-    return v && g_frame_count - g_menu_input_frame <= 2 ? v : 0;
+    return v && GetTickCount64() - g_menu_input_time <= 150 ? v : 0;
 }
 
 bool menu_select_held() { return g_menu_select; }
@@ -595,6 +603,11 @@ void apply(uint16_t &buttons, uint8_t analog[8], int16_t &lx, int16_t &ly, int16
         press_channel(ch, p);
     }
     if (weapon_slot_press(play && table, weapon_pressed)) press_channel(table[kActions[kWeapon1].game], p);
+    if (play && table && g_f1_pause_polls > 0) { // F1 (below): pause first
+        g_f1_pause_polls--;
+        int ch = table[kActions[kPause].game];
+        if (ch >= 0 && ch < 24) press_channel(ch, p);
+    }
     if (!play) aim_hold_press(false, false);
     int input = 0;
     ULONGLONG now = GetTickCount64();
@@ -686,11 +699,26 @@ void apply(uint16_t &buttons, uint8_t analog[8], int16_t &lx, int16_t &ly, int16
     bool pointer = !play && host3d::cursor_stage(&sx, &sy);
     bool pointer_page = !play && pointer_page_up();
     // the pointer moved: it drives. Its first place on a menu (mouse_x -1: in play, or off the stage) is not a move,
-    // or a still cursor would take the highlight from the keyboard on every page that opens under it.
-    if (pointer && mouse_x >= 0.0f && (sx != mouse_x || sy != mouse_y)) pointer_drives = true;
+    // or a still cursor would take the highlight from the keyboard on every page that opens under it. While the
+    // keyboard drives, the pointer takes over only once it is a few stage units from where it was when a key last
+    // moved the highlight: a hand resting on the mouse nudges it a pixel now and then, and each nudge took the
+    // highlight back to the row under the cursor right after an arrow had moved it ("the arrows work half the time").
+    static float anchor_x = -1.0f, anchor_y = -1.0f;
+    constexpr float kTakeOver = 6.0f; // stage units (640x480)
+    if (pointer && mouse_x >= 0.0f && (sx != mouse_x || sy != mouse_y)) {
+        bool moved_away = anchor_x < 0.0f || std::fabs(sx - anchor_x) > kTakeOver || std::fabs(sy - anchor_y) > kTakeOver;
+        if (pointer_drives || moved_away) {
+            pointer_drives = true;
+            anchor_x = -1.0f;
+        }
+    }
     if (pointer) mouse_x = sx, mouse_y = sy;
     else mouse_x = mouse_y = -1.0f;
-    if (input) pointer_drives = false; // a menu key moved the highlight: the keyboard drives
+    if (input) { // a menu key moved the highlight: the keyboard drives
+        pointer_drives = false;
+        anchor_x = pointer ? sx : -1.0f;
+        anchor_y = sy;
+    }
     if (click_mode) { // a click: the page reports the row under the cursor within an update or two
         if (pointer && !play && !input && s_row_on >= 0) {
             // the side of the row the pointer is on now: asked of the pointer's place and the row's middle, so a move
@@ -850,8 +878,57 @@ void apply(uint16_t &buttons, uint8_t analog[8], int16_t &lx, int16_t &ly, int16
     // it kept at every page change, waits for a report that never comes: the click lands on no row. The pages watch
     // this number and report the row under the cursor once more when it moves (fe/pages.cpp hover_block, hover_walk).
     fe_int_set("FEPCPage", s_page_gen);
+    // F1: PC SETTINGS from wherever the player is (the user's request: the settings within reach of one key). The
+    // port walks the game's own menus there: in play it pauses and goes down the pause menu to PC SETTINGS (5th row),
+    // on the main menu it opens Options and its PC SETTINGS row (the last one, up from the first).
+    {
+        static bool f1_was;
+        bool f1 = held(VK_F1);
+        const char *page = fe_page();
+        if (f1 && !f1_was && g_f1_at >= g_f1_steps.size()) {
+            g_f1_steps.clear();
+            g_f1_pages.clear();
+            g_f1_at = 0;
+            auto wait = [](const char *page) { g_f1_steps.push_back(0); g_f1_pages.push_back(page); };
+            auto key = [](int k) { g_f1_steps.push_back(k); g_f1_pages.push_back(""); };
+            if (play) {
+                g_f1_pause_polls = 3;
+                wait("PauseMenu");
+            }
+            if (play || !_stricmp(page, "PauseMenu")) {
+                for (int i = 0; i < 4; i++) key(2);
+                key(5);
+            } else if (!_stricmp(page, "blacktitlemenu") || !_stricmp(page, "blacktitlemenu2")) {
+                key(2);
+                key(5);
+                wait("OptionsMenuXbox");
+                key(1);
+                key(5);
+            } else if (!_stricmp(page, "OptionsMenuXbox")) {
+                key(1);
+                key(5);
+            }
+            g_f1_give_up = now + 4000;
+            g_f1_next = now + 150;
+            if (!g_f1_steps.empty()) logf("[input] F1: to PC SETTINGS from '%s'", play ? "play" : page);
+        }
+        f1_was = f1;
+        if (g_f1_at < g_f1_steps.size()) {
+            if (now > g_f1_give_up) g_f1_at = g_f1_steps.size(); // the page never came: stop
+            else if (g_f1_steps[g_f1_at] == 0) {
+                if (!_stricmp(page, g_f1_pages[g_f1_at].c_str())) {
+                    g_f1_at++;
+                    g_f1_next = now + 250; // the page settles in first
+                }
+            } else if (!input && !g_menu_input && now >= g_f1_next) {
+                input = g_f1_steps[g_f1_at++];
+                g_f1_next = now + 120;
+            }
+        }
+    }
     if (input) {
         g_menu_input_frame = g_frame_count.load();
+        g_menu_input_time = GetTickCount64();
         g_menu_input = input;
     }
     g_menu_select = g_menu_down[4];

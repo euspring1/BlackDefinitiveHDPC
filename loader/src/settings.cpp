@@ -97,6 +97,7 @@ void settings_load()
         }
         else if (k == "fov") g_cfg.fov = std::clamp(v, 50.0f, 120.0f);
         else if (k == "skipanymovie") g_cfg.skip_movies = v != 0;
+        else if (k == "skip_intro") g_cfg.skip_intro = v != 0;
         else if (k == "reverb") g_cfg.reverb = v != 0;
         else if (k == "reverb_gain") g_cfg.reverb_gain = std::clamp(v, 0.0f, 8.0f);
         else bindings::load_ini(k.c_str(), val); // key_<action> = Key[,Key]
@@ -142,7 +143,7 @@ void settings_save()
     fprintf(f, "draw_distance = %d\n", g_cfg.draw_distance);
     bool pad = g_cfg.input_pad_next >= 0 ? g_cfg.input_pad_next != 0 : g_cfg.input_pad;
     fprintf(f, "input = %s\n", pad ? "controller" : "keyboard");
-    fprintf(f, "skipanymovie = %d\n", g_cfg.skip_movies ? 1 : 0);
+    fprintf(f, "skipanymovie = %d\nskip_intro = %d\n", g_cfg.skip_movies ? 1 : 0, g_cfg.skip_intro ? 1 : 0);
     fprintf(f, "seamfill = %d\n", g_cfg.seam_fill ? 1 : 0);
     fprintf(f, "effectsnative = %d\n", g_cfg.effects_native ? 1 : 0);
     bindings::save_ini(f);

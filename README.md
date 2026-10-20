@@ -110,6 +110,7 @@ own texture there. PC SETTINGS > MODS > TEXTURES turns the pack on or off (from 
 | Health pack | X |
 | Show objectives | Tab |
 | Pause | Esc |
+| PC SETTINGS (from play, the pause menu or the main menu) | F1 |
 
 Menus: arrow keys, Enter to confirm, Backspace to go back, or the mouse (left click confirms, right click goes back,
 the wheel scrolls). Every key can be changed in
@@ -172,6 +173,7 @@ Also in `game\black.ini`:
 | `language = en` | `en` or `ptbr` |
 | `draw_distance = 1` | 1, 2, 4, 8, 12 or 16 |
 | `input = keyboard` | `keyboard` or `controller` prompts |
+| `skip_intro = 1` | skip the logo, credits and intro films at start (straight to PRESS START, then the main menu) |
 
 `black.exe --help` lists the command-line options.
 

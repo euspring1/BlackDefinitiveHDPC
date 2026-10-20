@@ -223,8 +223,11 @@ extern "C" uint32_t g_fe_menu_input = kMenuInput;
 
 extern "C" void __cdecl fe_menu_keys(uint8_t *input)
 {
+    // A key waits through the page's short lock-out after a page change (+9) instead of being taken and dropped there:
+    // a tap right after a page opened used to vanish.
+    if (*(int32_t *)input != 0 || input[9]) return;
     int key = bindings::take_menu_input();
-    if (!key || *(int32_t *)input != 0 || input[9]) return;
+    if (!key) return;
     uint32_t &check = *(uint32_t *)(input + 4);
     if (check == kListenCheck) {
         if (key != 5) return;
