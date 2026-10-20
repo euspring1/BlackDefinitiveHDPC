@@ -8,6 +8,7 @@
 #include "d3d/subtitles.h"
 #include "fe/restart.h"
 #include "cheats.h"
+#include "timing.h"
 
 #include "d3d/dispatch.h"
 #include "d3d/draw.h"
@@ -1326,6 +1327,7 @@ uint32_t __stdcall D3DDevice_Swap(uint32_t Flags)
     present_backbuffer();
     capture_frame();
     uint32_t frames = ++g_frame_count;
+    timing_frame_swapped();
     memdump_frame(frames);
     if (g_cfg.debug_frame && frames == (g_cfg.debug_frame_end ? g_cfg.debug_frame_end : g_cfg.debug_frame)) {
         dump_render_targets(frames);
