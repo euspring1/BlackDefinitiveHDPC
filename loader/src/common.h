@@ -93,7 +93,7 @@ struct Config {
     bool fpscounter = false;     // draw the current frame rate over the picture (d3d/fps.cpp)
     bool camera_shake = true;    // the view shakes at explosions as in the original (shake.cpp; PC SETTINGS > MODS)
     bool reload_blur = false;    // the reload's depth blur of the original, off by default (effects.cpp; PC SETTINGS > MODS)
-    int draw_distance = 2;       // LOD and draw distances x 1 (the game's), 2 (default), 4, 8, 12, 16 (drawdist.cpp; PC SETTINGS > MODS)
+    int draw_distance = 1;       // LOD and draw distances x 1 (the game's, default), 2, 4, 8, 12, 16 (drawdist.cpp; PC SETTINGS > MODS)
     bool input_pad = false;      // INPUT (PC SETTINGS > INPUT): the prompts show the controller's buttons instead of the
     int input_pad_next = -1;     // keys; the text is built at start (fe/pages.cpp), so a choice applies at the next one
     bool vsync = false;          // Present waits for the monitor's refresh (d3d/host.cpp; PC SETTINGS > MODS)

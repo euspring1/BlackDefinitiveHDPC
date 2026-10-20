@@ -34,7 +34,7 @@ parts of the Xbox it talks to (kernel, Direct3D 8, DirectSound, controller libra
 | HD texture pack | Uses a PCSX2 texture pack of the PS2 version (currently *BLACK_HD_Reimagined_Texture_Pack*, in `game\mods\replacements`): each game texture is matched to its HD version by its picture, the first time it is seen, and loaded into video memory. Unmatched textures stay as they are. |
 | Textures | Texture replacement: a PNG in `game\textures\` named after a game texture replaces it (any size, mipmapped). `--dump-textures` saves the game's textures to `game\textures\dump\` to find their names. |
 | Performance | Accurate frame pacing above 60 fps without a busy core: the game's vertical blank runs at the chosen rate on a separate CPU. |
-| Draw distance | Level of detail and draw distances 1X (the game's), **2X** (default), 4X, 8X, 12X or 16X, in PC SETTINGS > MODS. See *Performance notes*. |
+| Draw distance | Level of detail and draw distances **1X** (the game's, default), 2X, 4X, 8X, 12X or 16X, in PC SETTINGS > MODS. See *Performance notes*. |
 | Language | **English** (default) or **Brazilian Portuguese** for the game's text and every PC SETTINGS page, in PC SETTINGS > MODS (from the next start). The Portuguese text comes with the port. |
 | Input | PC SETTINGS > INPUT: **MOUSE/KEYBOARD** (default, prompts show your keys) or **CONTROLLER** (prompts and menus show the controller's buttons), from the next start. |
 | Camera and effects | Camera shake on explosions (on by default) and the reload blur (off by default) can be turned on or off in PC SETTINGS > MODS. |
@@ -133,7 +133,7 @@ The aspect ratio is only on the main menu's pages; everything else is also in th
 First start (no `black.ini` settings yet): 120 fps, window 1080p, resolution scale 4X, anisotropic filtering 16X,
 field of view 100, weapon field of view 85, HD crosshair, hold to aim and crouch, auto-aim for the controller only,
 subtitles and FPS counter off, camera shake on, reload blur off, V-Sync off, HD textures on, English, draw distance
-2X, mouse/keyboard prompts.
+1X, mouse/keyboard prompts.
 
 ### Performance notes
 
@@ -170,7 +170,7 @@ Also in `game\black.ini`:
 | `vsync = 0` | V-Sync |
 | `textures = 1` | the HD texture pack in `game\mods\replacements` |
 | `language = en` | `en` or `ptbr` |
-| `draw_distance = 2` | 1, 2, 4, 8, 12 or 16 |
+| `draw_distance = 1` | 1, 2, 4, 8, 12 or 16 |
 | `input = keyboard` | `keyboard` or `controller` prompts |
 
 `black.exe --help` lists the command-line options.

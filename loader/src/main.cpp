@@ -105,7 +105,7 @@ void usage()
            "  --no-seamfill     do not fill hairline cracks between geometry pieces (destructible walls)\n"
            "  --reload-blur     the original's depth blur while reloading, off by default (PC SETTINGS > MODS)\n"
            "  --language L      en (default) or ptbr: the game's text and the port's menus (PC SETTINGS > MODS)\n"
-           "  --draw-distance N LOD and draw distances x N: 1 (the game's), 2 (default), 4, 8, 12 or 16 (PC SETTINGS > MODS)\n"
+           "  --draw-distance N LOD and draw distances x N: 1 (the game's, default), 2, 4, 8, 12 or 16 (PC SETTINGS > MODS)\n"
            "  --controller      prompts and menus show the controller's buttons (PC SETTINGS > INPUT)\n"
            "  --no-textures     no HD texture pack (mods\\replacements; PC SETTINGS > MODS)\n"
            "  --perf-at S:D     record performance for D seconds from S seconds after the first frame (perf\\)\n"
