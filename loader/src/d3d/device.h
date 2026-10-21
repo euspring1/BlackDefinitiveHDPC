@@ -23,5 +23,8 @@ uint32_t host_w(uint32_t xbox_w);
 uint32_t host_h(uint32_t xbox_h);
 void request_render_change(); // the render-size settings in g_cfg changed (PC SETTINGS): applied after the next Swap
 void request_render_rebuild(); // re-create every host target after the next Swap, also at the same render size
+// Frameskip: this frame is not drawn (its draws and clears are dropped, nothing is presented) so a late world
+// catches up with real time (device.cpp, decided at each Swap).
+bool frame_skipped();
 
 } // namespace xd3d

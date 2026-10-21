@@ -14,7 +14,7 @@ parts of the Xbox it talks to (kernel, Direct3D 8, DirectSound, controller libra
 
 | Area | Improvement |
 |---|---|
-| Frame rate | 30, 60, **120**, 144, 165 or 240 fps (default **120**). Frame pacing rebuilt so high rates no longer run in slow motion; short waits stay accurate even on PCs with coarse system timers. |
+| Frame rate | 30, 60, **120**, 144, 165 or 240 fps (default **120**). Frame pacing rebuilt so high rates no longer run in slow motion; short waits stay accurate even on PCs with coarse system timers. **Frameskip**: when the PC cannot keep the chosen rate (a heavy scene, a high draw distance, another program busy), the game keeps running at real speed and skips drawing some frames instead of going into slow motion. |
 | Crosshair | **HD crosshair**: the HUD texture rebuilt at 4x from your own game files with a sharp dot (white disc, black outline), mipmapped so the outline never flickers away. Colours set in `black.ini`: **green** normally, **blood red** over an enemy, and **black** over an object that can explode (as in the original game). |
 | Aiming | **Hold to aim** (aim while the button is held) or the original toggle, in PC SETTINGS > CONTROLS > AIM. |
 | Aim assist | AUTO-AIM: OFF, ON or **CONTROLLER ONLY** (default), in PC SETTINGS > CONTROLS: the pull towards enemies works with a controller and switches off as soon as the keyboard or mouse is used. |
@@ -58,7 +58,7 @@ look, bindable keys, XInput controllers, borderless fullscreen, settings in the 
    with the game's files. Only the NTSC-U build works: `game\default.xbe` must have SHA-256
    `DF2739C372D254A90AEECCF5971D12097F22D89FBB90DB021FDA96DD4DEB68F6`
    (PowerShell: `Get-FileHash game\default.xbe -Algorithm SHA256`).
-2. Extract `BlackDefinitiveHDPCv1.2.zip` into the `game` folder:
+2. Extract `BlackDefinitiveHDPCv1.3.zip` into the `game` folder:
 
    ```
    game\
@@ -143,8 +143,9 @@ subtitles and FPS counter off, camera shake on, reload blur off, V-Sync off, HD 
 
 - **Draw distance**: 4X and above draw many more objects in open areas and forests and can cost a lot of frame rate
   (measured in a forest: about 200 fps at 1X, 135 fps at 4X, 85 fps at 16X). Like on the Xbox, the game runs on one
-  CPU core, so this depends mostly on the CPU. When a frame takes longer than the chosen frame rate allows, the game
-  runs slower than real time, so pick a draw distance that keeps your frame rate.
+  CPU core, so this depends mostly on the CPU. When a frame takes longer than the chosen frame rate allows, the
+  frameskip keeps the game at real speed by drawing fewer frames, so the picture gets less smooth: pick a draw distance
+  that keeps your frame rate. `black.exe --no-frameskip` turns the frameskip off.
 - **Resolution scale**: 4X (default) renders above 4K; lower it on weaker graphics cards.
 - **Frame rate**: above 120 fps needs a fast CPU for the same reason as the draw distance.
 - **HD textures**: use more video memory; the first time a texture is seen it is matched to the pack, which can cause

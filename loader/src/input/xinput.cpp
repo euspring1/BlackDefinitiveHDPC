@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -186,6 +187,13 @@ void read_press_file(uint32_t now_ms)
                 }
                 if (line == "audio-lost") {
                     audio_out::simulate_lost();
+                    continue;
+                }
+                if (line.rfind("ptr:", 0) == 0) { // "ptr:X,Y" in the stage's 640x480, "ptr:off"
+                    float px = -1.0f, py = -1.0f;
+                    if (sscanf(line.c_str() + 4, "%f,%f", &px, &py) != 2) px = -1.0f;
+                    host3d::test_pointer(px, py);
+                    logf("[input] press-file pointer %.0f,%.0f", px, py);
                     continue;
                 }
                 if (line.rfind("hint:", 0) == 0) {

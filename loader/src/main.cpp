@@ -233,6 +233,7 @@ bool parse_args()
             if (!next(v)) return false;
             g_cfg.draw_distance = std::clamp(_wtoi(v.c_str()), 1, 16);
         } else if (a == L"--no-vertex-cache") g_cfg.vertex_cache = false;
+        else if (a == L"--no-frameskip") g_cfg.frameskip = false;
         else if (a == L"--cheats") { // tests: every cheat on
             g_cfg.cheat_unlock_all = g_cfg.cheat_god = g_cfg.cheat_health_packs = true;
             settings_mark_cli("cheat_unlock_all");

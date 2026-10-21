@@ -9,7 +9,6 @@ void install_timing_patches(); // after image_map; known build only
 // two other uses of the 1/30 constant (0x295FC0) at 1/60. Any higher rate works the same way (1/fps s and
 // 1000/fps ms). Returns false if the code does not match.
 bool install_fps_patches(int fps);
-void timing_frame_swapped(); // at each Swap: a late frame gives the world a longer step (no slow motion)
 
 // The frame rates the port offers (30 = the original); anything else becomes the nearest of them.
 constexpr int kFrameRates[] = {30, 60, 120, 144, 165, 240};

@@ -29,6 +29,7 @@ void set_cursor_free(bool on);
 bool cursor_stage(float *x, float *y);
 // The same place, but a point outside the picture clamps to its edge: the port draws its own arrow (cursor.cpp).
 bool cursor_stage_any(float *x, float *y);
+void test_pointer(float x, float y); // tests: the pointer held at this stage point (x < 0: the real one again)
 bool cursor_free();           // a menu page owns the pointer: the port's own arrow is drawn
 bool cursor_down(int button); // 0 left, 1 right: pressed since the last poll or held
 int menu_wheel();             // wheel notches taken while a menu page owns the pointer: + = up, - = down

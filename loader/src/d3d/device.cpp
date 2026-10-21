@@ -8,7 +8,7 @@
 #include "d3d/subtitles.h"
 #include "fe/restart.h"
 #include "cheats.h"
-#include "timing.h"
+#include "input/bindings.h"
 
 #include "d3d/dispatch.h"
 #include "d3d/draw.h"
@@ -1016,6 +1016,7 @@ HRESULT __stdcall D3DDevice_Clear(uint32_t Count, const D3DRECT *pRects, uint32_
 {
     DTRACE("%u, %p, 0x%x, 0x%08x, %f, %u", Count, pRects, Flags, Color, Z, Stencil);
     pb_flush();
+    if (frame_skipped()) return D3D_OK;
     if (debug_frame_active()) logf("[rt] Clear(%u rects, flags 0x%x, color 0x%08x, z %g)", Count, Flags, Color, Z);
     DWORD f = 0;
     if (Flags & XCLEAR_TARGET) f |= D3DCLEAR_TARGET;
@@ -1313,21 +1314,95 @@ void check_render_size()
     change_render_scale(w, h);
 }
 
+// Frameskip. Above 60 fps the world steps a fixed 1/fps per frame (timing.cpp), so frames that take longer than
+// that put it behind real time: slow motion whenever the PC cannot keep the chosen rate (a heavy scene, another
+// program busy). Changing the step instead broke the game (the enemies' AI keeps timers made for the fixed step and
+// crashed in FUN_00193CF0). So the step stays and frames are skipped, as emulators do: while the world (frames x
+// the step since a starting point) is a frame or more behind the clock, the next frame runs the game as
+// usual but draws nothing, presents nothing and does not wait for a vblank, which makes it much cheaper, until the
+// world has caught up. At most three in a row are skipped, so the picture keeps moving; a delay longer than a
+// quarter second (a load, a hitch) is not chased.
+std::atomic<bool> g_skip_frame;
+bool frame_skipped() { return g_skip_frame.load(std::memory_order_relaxed); }
+
+namespace {
+bool decide_frameskip()
+{
+    static LARGE_INTEGER freq = [] {
+        LARGE_INTEGER f;
+        QueryPerformanceFrequency(&f);
+        return f;
+    }();
+    static int64_t base;
+    static uint64_t frames;
+    static int in_row;
+    static uint32_t skipped_total, logged_at;
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+    uint32_t clock = *(const uint32_t *)(uintptr_t)0x002D45D4;
+    float c = clock ? *(const float *)(uintptr_t)(clock + 0x20) : 0.0f;
+    if (g_cfg.verbose) { // the game clock's time (*0x2D45D4 + 0x20) against real time, every 5 s
+        static int64_t t0;
+        static float c0;
+        static uint32_t f0;
+        if (!t0) t0 = now.QuadPart, c0 = c, f0 = g_frame_count;
+        double real = (double)(now.QuadPart - t0) / freq.QuadPart;
+        if (real >= 5.0) {
+            logf("[d3d] frameskip check: game time %.2f s in %.2f s real (%.0f%%), %u frames", c - c0, real, 100.0 * (c - c0) / real,
+                 g_frame_count - f0);
+            t0 = now.QuadPart, c0 = c, f0 = g_frame_count;
+        }
+    }
+    if (!g_cfg.frameskip || g_cfg.fps <= 60) {
+        base = 0;
+        in_row = 0;
+        return false;
+    }
+    const double step = 1.0 / g_cfg.fps;
+    if (!base) {
+        base = now.QuadPart;
+        frames = 0;
+        return false;
+    }
+    frames++;
+    double lag = (double)(now.QuadPart - base) / freq.QuadPart - frames * step;
+    if (lag > 0.25 || lag < -0.25) { // a load or a hitch: start counting again from here
+        base = now.QuadPart;
+        frames = 0;
+        in_row = 0;
+        return false;
+    }
+    bool skip = lag > step && in_row < 3;
+    in_row = skip ? in_row + 1 : 0;
+    if (skip) skipped_total++;
+    if (g_frame_count - logged_at >= 1200) {
+        if (skipped_total) logf("[d3d] frameskip: %u frames not drawn in the last %u (catching up)", skipped_total, g_frame_count - logged_at);
+        skipped_total = 0;
+        logged_at = g_frame_count;
+    }
+    return skip;
+}
+} // namespace
+
 uint32_t __stdcall D3DDevice_Swap(uint32_t Flags)
 {
     DTRACE("0x%x", Flags);
     pb_flush();
     perf::swap_begin();
-    pace_swap();
-    subtitles_tick(host_w(g_width), host_h(g_height)); // over the movie, before the picture is presented
-    fps_tick(host_w(g_width), host_h(g_height));       // the frame rate counter, same place
-    cursor_tick(host_w(g_width), host_h(g_height));    // the port's own menu cursor, over everything
+    const bool skipped = frame_skipped();
+    if (!skipped) {
+        pace_swap();
+        subtitles_tick(host_w(g_width), host_h(g_height)); // over the movie, before the picture is presented
+        fps_tick(host_w(g_width), host_h(g_height));       // the frame rate counter, same place
+        cursor_tick(host_w(g_width), host_h(g_height));    // the port's own menu cursor, over everything
+    }
     restart_poll();                                    // a mod changed and the player is back at the main menu
     cheats_frame();                                    // PC SETTINGS > CHEATS > UNLOCK ALL
-    present_backbuffer();
-    capture_frame();
+    if (!skipped) {
+        present_backbuffer();
+        capture_frame();
+    }
     uint32_t frames = ++g_frame_count;
-    timing_frame_swapped();
     memdump_frame(frames);
     if (g_cfg.debug_frame && frames == (g_cfg.debug_frame_end ? g_cfg.debug_frame_end : g_cfg.debug_frame)) {
         dump_render_targets(frames);
@@ -1347,7 +1422,7 @@ uint32_t __stdcall D3DDevice_Swap(uint32_t Flags)
         screenshot_now(tag);
     }
     bool force = g_reset_requested.exchange(false);
-    if (host3d::present() == D3DERR_DEVICELOST || g_device_lost || force) recover_device(force);
+    if ((!skipped && host3d::present() == D3DERR_DEVICELOST) || g_device_lost || force) recover_device(force);
     check_render_size();
     perf::frame_end(host_w(g_width), host_h(g_height));
     audio_defaults_frame();
@@ -1360,6 +1435,10 @@ uint32_t __stdcall D3DDevice_Swap(uint32_t Flags)
         static std::atomic<bool> noted{false};
         if (!noted.exchange(true)) logf("[d3d] vblank callback %s is set by the game", sym_name((uint32_t)(uintptr_t)cb).c_str());
     }
+    // the next frame: skipped while the world is behind; it does not wait for a vblank either (the game waits for
+    // the vblank event within its frame: signalled now)
+    g_skip_frame = decide_frameskip();
+    if (g_skip_frame) ksync_signal_object(g_dev + DEV_VBLANKEVENT);
     return 0;
 }
 

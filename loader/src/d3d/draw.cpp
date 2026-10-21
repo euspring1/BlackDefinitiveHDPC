@@ -967,6 +967,7 @@ bool begin_draw(DrawCtx &ctx)
 {
     IDirect3DDevice9 *d = host3d::dev();
     if (!d) return false;
+    if (frame_skipped()) return false; // frameskip: the world is catching up (device.cpp)
     g_draw_serial++;
     apply_render_states(d);
     bool ps = g_st.pixel_shader != 0;

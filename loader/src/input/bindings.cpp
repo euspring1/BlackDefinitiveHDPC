@@ -654,13 +654,16 @@ void apply(uint16_t &buttons, uint8_t analog[8], int16_t &lx, int16_t &ly, int16
     // sit under the pointer away from the centre, and made the profile keyboard pick the key beside the one clicked.
     // The pause pages are the exception: they come from InGameOn/PseMenu and lay their rows out on the picture itself
     // (their clips' places are picture pixels), so they take the pointer as it is.
+    // Up and down there is no such scale on any page (main menu, Options, PC SETTINGS, in 16:9 and 4:3 alike): the
+    // rows' lines are the stage's own y. Scaled as x, every row's band sat up to 20 stage units below its text and the
+    // rows 20 apart where they are 26, so a click took the row above the cursor.
     auto pause_space = [] {
         const char *n = fe_page();
         return !_stricmp(n, "PauseMenu") || !_stricmp(n, "PCPageIG") || !_stricmp(n, "PauseMenuOptionXbox") ||
                !_stricmp(n, "ConfirmWarning") || !_stricmp(n, "PauseMenuObjectives") || !_stricmp(n, "objectives");
     };
     auto page_of_x = [&](float x) { return pause_space() ? x : (x - 64.0f) * 1.25f; };
-    auto page_of_y = [&](float y) { return pause_space() ? y : (y - 48.0f) * 1.25f; };
+    auto page_of_y = [](float y) { return y; };
     static char s_page[40];
     static int s_page_gen; // bumped at every page change; the pages read it (externObject.FEPCPage) and report again
     // A left button held on a row that carries a value steps it again and again (a slider sweeps instead of moving

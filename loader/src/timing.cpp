@@ -168,53 +168,6 @@ bool install_refire_patches()
     return true;
 }
 
-// The world's step follows late frames. Above 30 fps the game steps the world 1/fps per frame (g_frame_60, read at
-// 0x20C2A4 every frame), which is real time only while every frame is on time: when the PC cannot keep the rate (a
-// heavy scene, another program busy), the world moved 1/240 s per frame that took 6 ms and the game ran in slow
-// motion. At each Swap the time since the previous one is measured; a frame clearly late (over 1.05 x the nominal)
-// gives the next step its real length, smoothed over a few frames and never above 1/30 s, the original game's own
-// step. Frames on time keep the exact nominal step, so normal play has no jitter.
-namespace {
-float g_nominal = 1.0f / 30.0f;
-bool g_fps_patched;
-} // namespace
-
-void timing_frame_swapped()
-{
-    if (!g_fps_patched) return;
-    static LARGE_INTEGER freq = [] {
-        LARGE_INTEGER f;
-        QueryPerformanceFrequency(&f);
-        return f;
-    }();
-    static int64_t last;
-    static float smooth;
-    LARGE_INTEGER now;
-    QueryPerformanceCounter(&now);
-    float dt = last ? (float)((double)(now.QuadPart - last) / freq.QuadPart) : g_nominal;
-    last = now.QuadPart;
-    if (dt > 0.25f) dt = g_nominal; // a pause (menu load, window drag): not a slow frame
-    smooth = smooth > 0.0f ? smooth * 0.75f + dt * 0.25f : dt;
-    float step = smooth > g_nominal * 1.05f ? std::fmin(smooth, 1.0f / 30.0f) : g_nominal;
-    g_frame_60 = step;
-    *(float *)(uintptr_t)0x002F3A38 = step; // the game clock's frame time (FUN_000BE3xx divide it per update)
-    // the world's step: game object +0x2013C, written once at start-up (0x20C2FF) and read by everything that moves
-    if (uint32_t game = *(const uint32_t *)(uintptr_t)0x002D45F0) *(float *)(uintptr_t)(game + 0x2013C) = step;
-    if (g_cfg.verbose) { // the steps the game used (game object +0x2013C), summed against real time, every 5 s
-        static int64_t t0;
-        static double world;
-        uint32_t game = *(const uint32_t *)(uintptr_t)0x002D45F0;
-        if (game) world += *(const float *)(uintptr_t)(game + 0x2013C);
-        if (!t0) t0 = now.QuadPart;
-        double real = (double)(now.QuadPart - t0) / freq.QuadPart;
-        if (real >= 5.0) {
-            logf("timing: world time %.2f s in %.2f s real (%.0f%%), step %.2f ms", world, real, 100.0 * world / real, step * 1000);
-            t0 = now.QuadPart;
-            world = 0;
-        }
-    }
-}
-
 int valid_fps(int fps)
 {
     int best = kFrameRates[0];
@@ -239,8 +192,6 @@ bool install_fps_patches(int fps)
             return false;
         }
     for (const Operand &o : ops) *(uint32_t *)(uintptr_t)o.at = o.old_value == 0x21 ? (uint32_t)(1000 / fps) : frame;
-    g_nominal = 1.0f / (float)fps;
-    g_fps_patched = true;
     bool refire = install_refire_patches();
     // Reload blur (the post-process controller at *0x2D1990 + 0x830A0, mode 1): its hold time is set at
     // 0x17B314 to reload-animation length [anim+0x1C] (in 30 fps animation frames) * frame time (game

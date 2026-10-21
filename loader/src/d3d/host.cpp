@@ -478,10 +478,17 @@ void set_cursor_free(bool on)
 int menu_wheel() { return g_menu_wheel.exchange(0); }
 
 namespace {
+std::atomic<float> g_test_x{-1.0f}, g_test_y{-1.0f}; // tests: --press-file "ptr:X,Y" (stage units), "ptr:off"
+
 // The pointer in the front end's 640x480 stage (the picture keeps the game's aspect, centred in the client area).
 // clamp: a point outside the picture goes to its edge instead of failing.
 bool pointer_in_stage(float *x, float *y, bool clamp)
 {
+    if (g_test_x.load() >= 0.0f) {
+        *x = g_test_x.load();
+        *y = g_test_y.load();
+        return true;
+    }
     if (!g_hwnd || g_captured) return false;
     if (GetForegroundWindow() != g_hwnd || IsIconic(g_hwnd)) return false; // only the window in front drives its menus
     POINT p;
@@ -501,6 +508,12 @@ bool pointer_in_stage(float *x, float *y, bool clamp)
     return true;
 }
 } // namespace
+
+void test_pointer(float x, float y)
+{
+    g_test_y = y;
+    g_test_x = x;
+}
 
 bool cursor_stage(float *x, float *y) { return pointer_in_stage(x, y, false); }
 bool cursor_stage_any(float *x, float *y) { return pointer_in_stage(x, y, true); }
