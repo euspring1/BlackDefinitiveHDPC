@@ -215,7 +215,6 @@ This builds `black.exe` and `blackrt.dll`.
 
 ### Tools used
 
-- REA — Reverse Engineer Anything, by morluto — reverse-engineering workbench.
 - Ghidra (NSA) with ghidra-xbe (XboxDev) — disassembly and decompilation of the game.
 - extract-xiso (XboxDev) — extracts the game from the disc image.
 - Visual Studio Build Tools and CMake (Microsoft / Kitware) — building the port.
