@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/icon.png" alt="BLACK PC" width="140"></p>
+<p align="center"><img src="assets/icon.png" alt="BLACK PC" width="175"></p>
 
 # BlackDefinitiveHDPC
 
