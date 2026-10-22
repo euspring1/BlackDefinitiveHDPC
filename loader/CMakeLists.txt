@@ -17,6 +17,7 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 # blackrt.dll: XBE loader, HLE kernel, hooks. Everything that is real code lives here.
 add_library(blackrt SHARED
+  res/black.rc
   src/main.cpp
   src/log.cpp
   src/xbe.cpp
@@ -91,7 +92,7 @@ target_link_options(blackrt PRIVATE /SAFESEH:NO /MAP) # blackrt.map: port addres
 # XBE's address range (0x10000-0x587a40) before Windows can place heaps or stacks there.
 # blackrt.dll then maps the XBE over this image (headers included) and never returns.
 # A Windows-subsystem program: no console window; started from a command prompt it attaches to that one (main.cpp).
-add_executable(black stub/stub.c)
+add_executable(black stub/stub.c res/black.rc)
 target_link_libraries(black PRIVATE blackrt kernel32)
 set_property(TARGET black PROPERTY MSVC_RUNTIME_CHECKS "")
 target_compile_options(black PRIVATE /GS- /Gs999999)

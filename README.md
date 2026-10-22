@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/icon.png" alt="BLACK PC" width="140"></p>
+
 # BlackDefinitiveHDPC
 
 **BlackDefinitiveHDPC** by **Spring — Spring Code**
@@ -198,6 +200,8 @@ This builds `black.exe` and `blackrt.dll`.
 ## Credits
 
 **BlackDefinitiveHDPC** — Spring, **Spring Code**: all the improvements listed above.
+
+**Icon and artwork** — Gary aka **POOTERMAN** ([deviantart.com/pooterman](https://www.deviantart.com/pooterman)).
 
 ### Projects studied
 

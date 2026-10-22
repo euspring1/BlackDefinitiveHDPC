@@ -1,0 +1,3 @@
+// The port's icon (art by POOTERMAN): black.exe's in Explorer and shortcuts, and the game window's (d3d/host.cpp,
+// loaded from blackrt.dll: black.exe's own headers are overwritten by the XBE at start).
+1 ICON "black.ico"

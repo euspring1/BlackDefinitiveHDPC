@@ -352,6 +352,11 @@ DWORD WINAPI ui_thread(void *)
     AdjustWindowRect(&r, style, FALSE);
     g_hwnd = CreateWindowExW(0, wc.lpszClassName, L"BLACK", style, CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left,
                              r.bottom - r.top, nullptr, nullptr, wc.hInstance, nullptr);
+    for (int big = 0; big < 2; big++) { // the port's icon (res/black.rc) on the title bar and the taskbar
+        int s = GetSystemMetrics(big ? SM_CXICON : SM_CXSMICON);
+        if (HANDLE icon = LoadImageW(wc.hInstance, MAKEINTRESOURCEW(1), IMAGE_ICON, s, s, 0))
+            SendMessageW(g_hwnd, WM_SETICON, big ? ICON_BIG : ICON_SMALL, (LPARAM)icon);
+    }
     RAWINPUTDEVICE mouse = {0x01, 0x02, 0, g_hwnd}; // generic desktop / mouse, while the window has focus
     if (!RegisterRawInputDevices(&mouse, 1, sizeof mouse)) logf("host: raw mouse input not available (%lu)", GetLastError());
     ShowWindow(g_hwnd, g_cfg.background ? SW_SHOWMINNOACTIVE : SW_SHOWNORMAL);
