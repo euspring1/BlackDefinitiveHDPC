@@ -102,12 +102,50 @@ bool patch(const Patch &p)
 namespace {
 float g_frame_60 = 1.0f / 60.0f;
 float g_frame_30 = 1.0f / 30.0f;
+float g_physics_step_scale = 1.0f;
+float g_physics_sleep_threshold = 0.01f;
+
+void __cdecl physics_damping(float *linear, float *angular)
+{
+    // Positive retention factors decay over time; keep hard stops and reversals unchanged.
+    if (*linear > 0.0f) *linear = powf(*linear, g_physics_step_scale);
+    if (*angular > 0.0f) *angular = powf(*angular, g_physics_step_scale);
+}
+
+// Give powf an empty x87 stack, then restore the game's FP/register state with only the two results changed.
+// FXSAVE's xmm0/xmm1 slots start at +0xA0/+0xB0.
+__declspec(naked) void physics_damping_thunk()
+{
+    __asm {
+        subss xmm1, dword ptr [eax + 0x24]
+        subss xmm0, dword ptr [eax + 0x20]
+        pushfd
+        pushad
+        mov ebp, esp
+        and esp, 0xFFFFFFF0
+        sub esp, 0x200
+        fxsave [esp]
+        fninit
+        fldcw word ptr [esp]
+        lea eax, [esp + 0xB0]
+        lea edx, [esp + 0xA0]
+        push eax
+        push edx
+        call physics_damping
+        add esp, 8
+        fxrstor [esp]
+        mov esp, ebp
+        popad
+        popfd
+        ret
+    }
+}
 
 // A disp32/imm32 operand at `at` inside the instruction at `insn` (whose first bytes must match).
 struct Operand {
     uint32_t insn;
     uint8_t expect[6];
-    uint32_t at, old_value;
+    uint32_t at, old_value, new_value;
 };
 } // namespace
 
@@ -179,19 +217,36 @@ int valid_fps(int fps)
 bool install_fps_patches(int fps)
 {
     g_frame_60 = 1.0f / (float)fps;
+    // Sleeping uses squared displacement per update and a frame counter, not velocity and seconds.
+    g_physics_step_scale = 30.0f / (float)fps;
+    g_physics_sleep_threshold = 0.01f * g_physics_step_scale * g_physics_step_scale;
+    uint32_t rest_frames = (uint32_t)((20 * fps + 29) / 30);
     uint32_t frame = (uint32_t)(uintptr_t)&g_frame_60;
+    uint32_t sleep_threshold = (uint32_t)(uintptr_t)&g_physics_sleep_threshold;
     const Operand ops[] = {
-        {0x0020C2A4, {0xF3, 0x0F, 0x10, 0x05, 0xC0, 0x5F}, 0x0020C2A8, 0x00295FC0}, // movss xmm0, [1/30] (NTSC frame time)
-        {0x0020C2AC, {0xC7, 0x05, 0x00, 0x38, 0x2F, 0x00}, 0x0020C2B2, 0x21},       // mov [0x2F3800], 33 (ms per frame)
-        {0x00193EAE, {0xF3, 0x0F, 0x59, 0x05, 0xC0, 0x5F}, 0x00193EB2, 0x00295FC0}, // mulss xmm0, [1/30]
-        {0x00212210, {0xF3, 0x0F, 0x10, 0x05, 0xC0, 0x5F}, 0x00212214, 0x00295FC0}, // movss xmm0, [1/30] -> 0x2F57F4
+        {0x0020C2A4, {0xF3, 0x0F, 0x10, 0x05, 0xC0, 0x5F}, 0x0020C2A8, 0x00295FC0, frame}, // movss xmm0, [1/30] (NTSC frame time)
+        {0x0020C2AC, {0xC7, 0x05, 0x00, 0x38, 0x2F, 0x00}, 0x0020C2B2, 0x21, (uint32_t)(1000 / fps)}, // mov [0x2F3800], 33 (ms per frame)
+        {0x00193EAE, {0xF3, 0x0F, 0x59, 0x05, 0xC0, 0x5F}, 0x00193EB2, 0x00295FC0, frame}, // mulss xmm0, [1/30]
+        {0x00212210, {0xF3, 0x0F, 0x10, 0x05, 0xC0, 0x5F}, 0x00212214, 0x00295FC0, frame}, // movss xmm0, [1/30] -> 0x2F57F4
+        {0x000DF8D6, {0xC7, 0x80, 0x8C, 0x03, 0x00, 0x00}, 0x000DF8DC, 20, rest_frames}, // world resting-update limit
+        {0x000DF8E7, {0xF3, 0x0F, 0x10, 0x05, 0xA8, 0x5C}, 0x000DF8EB, 0x00295CA8, sleep_threshold}, // world sleep-motion threshold
     };
     for (const Operand &o : ops)
         if (memcmp((const void *)(uintptr_t)o.insn, o.expect, 6) || *(uint32_t *)(uintptr_t)o.at != o.old_value) {
-            logf("timing: 60 fps patch site 0x%08x does not match this build; staying at 30 fps", o.insn);
+            logf("timing: %d fps patch site 0x%08x does not match this build; staying at 30 fps", fps, o.insn);
             return false;
         }
-    for (const Operand &o : ops) *(uint32_t *)(uintptr_t)o.at = o.old_value == 0x21 ? (uint32_t)(1000 / fps) : frame;
+    static const uint8_t damping_expect[] = {0xF3, 0x0F, 0x5C, 0x48, 0x24, 0xF3, 0x0F, 0x5C, 0x40, 0x20};
+    auto *damping = (uint8_t *)(uintptr_t)0x00077D91;
+    if (memcmp(damping, damping_expect, sizeof damping_expect)) {
+        logf("timing: physics damping site 0x00077D91 does not match this build; staying at 30 fps");
+        return false;
+    }
+    for (const Operand &o : ops) *(uint32_t *)(uintptr_t)o.at = o.new_value;
+    damping[0] = 0xE8;
+    int32_t damping_rel = (int32_t)((uintptr_t)&physics_damping_thunk - (0x00077D91 + 5));
+    memcpy(damping + 1, &damping_rel, 4);
+    memset(damping + 5, 0x90, sizeof damping_expect - 5);
     bool refire = install_refire_patches();
     // Reload blur (the post-process controller at *0x2D1990 + 0x830A0, mode 1): its hold time is set at
     // 0x17B314 to reload-animation length [anim+0x1C] (in 30 fps animation frames) * frame time (game
@@ -205,6 +260,8 @@ bool install_fps_patches(int fps)
     } else {
         logf("timing: reload blur site 0x0017B314 does not match this build");
     }
+    logf("timing: physics sleep threshold %.8g, %u rest frames; damping keeps the 30 fps rate",
+         g_physics_sleep_threshold, rest_frames);
     logf("timing: world steps 1/%d s per frame (%d fps)%s", fps, fps, refire ? "; weapon refire keeps the 30 fps rhythm" : "");
     return true;
 }
