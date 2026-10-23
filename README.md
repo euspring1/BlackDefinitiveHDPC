@@ -146,17 +146,11 @@ English, draw distance 1X, prompts following the device in use, controller sensi
 
 ### Performance notes
 
-- **Draw distance**: 4X and above draw many more objects in open areas and forests and can cost a lot of frame rate
-  (measured in a forest: about 200 fps at 1X, 135 fps at 4X, 85 fps at 16X). Like on the Xbox, the game runs on one
-  CPU core, so this depends mostly on the CPU. When a frame takes longer than the chosen frame rate allows, the
-  frameskip keeps the game at real speed by drawing fewer frames, so the picture gets less smooth: pick a draw distance
-  that keeps your frame rate. `black.exe --no-frameskip` turns the frameskip off.
-- **Resolution scale**: 4X (default) renders above 4K; lower it on weaker graphics cards.
-- **Frame rate**: above 120 fps needs a fast CPU for the same reason as the draw distance.
-- **Ambient occlusion**: runs on the graphics card at the render resolution; GTAO costs more than SSAO. With a high
-  resolution scale on a weaker card, lower the scale or use SSAO.
-- **HD textures**: use more video memory; the first time a texture is seen it is matched to the pack, which can cause
-  a short hitch.
+The game runs well with high settings: high frame rates, resolution scale, HD textures and ambient occlusion.
+
+- **Draw distance** is the one setting that still lowers the frame rate a little at 2X and above, mostly in open areas.
+  If the PC cannot keep up, the frameskip keeps the game at real speed (`black.exe --no-frameskip` turns it off).
+- **Weaker graphics cards**: lower the resolution scale, or use SSAO instead of GTAO.
 
 Also in `game\black.ini`:
 
