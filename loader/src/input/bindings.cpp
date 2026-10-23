@@ -319,10 +319,10 @@ void install_pad_layout()
     DWORD old;
     if (!VirtualProtect(presets, 2 * 0x94, PAGE_READWRITE, &old)) return;
     memcpy(second, def, 0x94);
-    // action (binding table index) -> channel: RT fire, LT aim, RB grenade, LB health pack, X reload, A use / pick up,
-    // B crouch, R3 melee, Y next weapon, D-pad left previous weapon, up firing mode, down suppressor
-    static const int32_t kModern[][2] = {{9, 23}, {16, 22}, {27, 20}, {33, 21}, {11, 18}, {13, 16},
-                                         {12, 17}, {32, 15}, {14, 19}, {15, 2},  {30, 0},  {31, 1}};
+    // action (binding table index) -> channel: RT fire, LT aim, RB grenade, X reload, A use / pick up, B crouch,
+    // R3 melee, Y next weapon, D-pad left previous weapon, up firing mode, down health pack, right suppressor
+    static const int32_t kModern[][2] = {{9, 23},  {16, 22}, {27, 20}, {11, 18}, {13, 16}, {12, 17},
+                                         {32, 15}, {14, 19}, {15, 2},  {30, 0},  {33, 1},  {31, 3}};
     for (const auto &m : kModern) def[m[0]] = m[1];
     logf("[input] controller layouts: DEFAULT is the modern layout (LT aim, RT fire, RB grenade), BLACK the game's own");
 }
