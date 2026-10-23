@@ -3,6 +3,7 @@
 // host Direct3D 9 device.
 #include "d3d/device.h"
 #include "audio_defaults.h"
+#include "autotune.h"
 #include "d3d/cursor.h"
 #include "d3d/fps.h"
 #include "d3d/occlusion.h"
@@ -1461,6 +1462,7 @@ uint32_t __stdcall D3DDevice_Swap(uint32_t Flags)
     // the next frame: skipped while the world is behind; it does not wait for a vblank either (the game waits for
     // the vblank event within its frame: signalled now)
     g_skip_frame = decide_frameskip();
+    autotune::frame(g_skip_frame);
     if (g_skip_frame) ksync_signal_object(g_dev + DEV_VBLANKEVENT);
     return 0;
 }

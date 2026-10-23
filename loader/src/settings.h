@@ -4,5 +4,6 @@
 #pragma once
 
 void settings_mark_cli(const char *key); // a command-line flag set this setting: the file must not override it
+bool settings_from_cli(const char *key); // that setting came from the command line
 void settings_load();                    // after the command line, once the root folder is current
 void settings_save();

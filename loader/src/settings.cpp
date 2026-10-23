@@ -34,11 +34,16 @@ std::string trim_value(const char *line)
 
 void settings_mark_cli(const char *key) { g_cli.insert(key); }
 
+bool settings_from_cli(const char *key) { return cli(key); }
+
 void settings_load()
 {
     if (g_cfg.background) return;
     FILE *f = nullptr;
-    if (_wfopen_s(&f, ini_file().c_str(), L"r") || !f) return;
+    if (_wfopen_s(&f, ini_file().c_str(), L"r") || !f) {
+        g_cfg.first_run = true; // no black.ini yet (autotune.cpp)
+        return;
+    }
     char line[256];
     while (fgets(line, sizeof line, f)) {
         char key[64] = "", val[128] = "";
@@ -64,7 +69,8 @@ void settings_load()
         else if (k == "mouse_sens") g_cfg.mouse_sens = std::clamp(v, 0.1f, 50.0f);
         else if (k == "mouse_invert") g_cfg.mouse_invert = v != 0;
         else if (k == "pad_sens") g_cfg.pad_sens = std::clamp(v, 0.1f, 10.0f);
-        else if (k == "aim_hold") g_cfg.aim_hold = v != 0;
+        // the release's black.ini says so: its first start counts as one (autotune.cpp); never written back
+        else if (k == "first_start") g_cfg.first_run = v != 0;        else if (k == "aim_hold") g_cfg.aim_hold = v != 0;
         else if (k == "crouch_hold") g_cfg.crouch_hold = v != 0;
         else if (k == "hd_reticle") g_cfg.hd_reticle = v != 0;
         else if (k == "walk_speed") g_cfg.walk_speed = std::clamp(v, 0.1f, 1.0f);
@@ -131,8 +137,7 @@ void settings_save()
     fprintf(f, "aa = %d\nfps = %d\nwidescreen = %d\nfullscreen = %d\n", g_cfg.aa ? 1 : 0, fps, wide ? 1 : 0, g_cfg.fullscreen ? 1 : 0);
     fprintf(f, "gain = %.2f\ngamma = %.2f\n", g_cfg.gain, g_cfg.gamma);
     fprintf(f, "mouse_sens = %.3f\nmouse_invert = %d\n", g_cfg.mouse_sens, g_cfg.mouse_invert ? 1 : 0);
-    fprintf(f, "pad_sens = %.3f\n", g_cfg.pad_sens);
-    fprintf(f, "aim_hold = %d\ncrouch_hold = %d\nwalk_speed = %.2f\n", g_cfg.aim_hold ? 1 : 0, g_cfg.crouch_hold ? 1 : 0, g_cfg.walk_speed);
+    fprintf(f, "pad_sens = %.3f\n", g_cfg.pad_sens);    fprintf(f, "aim_hold = %d\ncrouch_hold = %d\nwalk_speed = %.2f\n", g_cfg.aim_hold ? 1 : 0, g_cfg.crouch_hold ? 1 : 0, g_cfg.walk_speed);
     fprintf(f, "hd_reticle = %d\n", g_cfg.hd_reticle ? 1 : 0);
     fprintf(f, "texture_pack = %s\ntexture_pack_max = %d\n", narrow(g_cfg.texture_pack).c_str(), g_cfg.texture_pack_max);
     if (g_cfg.reticle_colour >= 0) fprintf(f, "reticle_colour = %06X\n", g_cfg.reticle_colour);

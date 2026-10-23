@@ -4,6 +4,7 @@
 // read by the game at boot: a new choice is saved for the next run and shown with "NEXT START" until then.
 #include "fe/pc_settings.h"
 
+#include "autotune.h"
 #include "common.h"
 #include "d3d/device.h"
 #include "d3d/host.h"
@@ -388,6 +389,7 @@ void step(int n, int dir)
     const Row &r = kRows[n];
     int i = std::min(r.get(), r.choices - 1);
     i = i < 0 ? 0 : (i + (dir > 0 ? 1 : r.choices - 1)) % r.choices;
+    if (n == 0 || n == 7 || n == kScale) autotune::user_changed(); // the render size or frame rate is the player's now
     r.set(i);
     settings_save();
     logf("fe: %s -> %s", r.label, narrow(r.text(i)).c_str());

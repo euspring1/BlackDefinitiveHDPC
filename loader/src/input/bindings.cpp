@@ -25,8 +25,10 @@
 #include "fe/calls.h"
 #include "fe/pause_ui.h"
 #include "fe/pc_settings.h"
+#include "fe/prompts.h"
 #include "fe/vars.h"
 #include "input/movies.h"
+#include "lang.h"
 #include "input/mouselook.h"
 #include "settings.h"
 
@@ -262,7 +264,8 @@ uint16_t wheel_key(int wheel)
 // an action from the ten assignable buttons (channels at 0x2A7DD4) and print the one-character string at
 // 0x2AB72C + 4 x button, which the game's font draws as that button (index 0 Y "\xB0", 1 A "\xB2", 2 B "\xB9",
 // 3 X "\xB3"; the others have none). Those four pointers are pointed at "[KEY]" strings: the key bound to the first
-// action on that button in the current controller layout. Kept up to date at every poll.
+// action on that button in the current controller layout. Kept up to date at every poll; while the controller's
+// prompts are shown (fe/prompts.h) they point at the game's own button strings again.
 void update_hud_buttons(const int32_t *table)
 {
     static const uint32_t kChannels = 0x002A7DD4, kStrings = 0x002AB72C;
@@ -275,17 +278,18 @@ void update_hud_buttons(const int32_t *table)
         for (int b = 0; b < 4; b++) original[b] = *(const uint32_t *)(uintptr_t)(kStrings + 4 * b);
         ready = true;
     }
+    const bool pad = prompts::pad();
     for (int b = 0; b < 4; b++) {
         int32_t ch = *(const int32_t *)(uintptr_t)(kChannels + 4 * b);
         std::string key;
-        for (int i = 0; i < kCount && key.empty(); i++)
+        for (int i = 0; i < kCount && key.empty() && !pad; i++)
             if (kActions[i].game >= 0 && i != kWeapon1 && i != kWeapon2 && table[kActions[i].game] == ch) key = hud_action_key(i);
         uint32_t *slot = (uint32_t *)(uintptr_t)(kStrings + 4 * b);
         if (key.empty()) {
             *slot = original[b];
             continue;
         }
-        snprintf(text[b], sizeof text[b], "[%s]", key.c_str());
+        snprintf(text[b], sizeof text[b], "%s", lang::font_text("[" + key + "]").c_str());
         *slot = (uint32_t)(uintptr_t)text[b];
     }
 }

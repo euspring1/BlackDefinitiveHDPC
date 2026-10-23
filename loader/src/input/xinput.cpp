@@ -295,16 +295,28 @@ void read_pad(uint32_t port, XGamepad &g)
     memset(&g, 0, sizeof g);
     if (port != 0) return;
     static uint32_t polls, absent[4]; // absent: the poll count when a slot was last found empty
+    static int8_t seen[4] = {-1, -1, -1, -1}; // logged state of each slot: -1 not yet, 0 empty, 1 connected
+    static bool input_logged;
     polls++;
     for (DWORD i = 0; g_pc_get && i < 4; i++) {
         if (absent[i] && polls - absent[i] < 120) continue;
         PcState pc = {};
-        if (g_pc_get(i, &pc) != ERROR_SUCCESS) {
+        DWORD r = g_pc_get(i, &pc);
+        if ((r == ERROR_SUCCESS) != (seen[i] == 1)) {
+            if (r == ERROR_SUCCESS || seen[i] == 1)
+                logf("[input] controller on XInput slot %lu %s (poll %u)", i, r == ERROR_SUCCESS ? "connected" : "removed", polls);
+            seen[i] = r == ERROR_SUCCESS;
+        }
+        if (r != ERROR_SUCCESS) {
             absent[i] = polls;
             continue;
         }
         absent[i] = 0;
         const PcGamepad &p = pc.Gamepad;
+        if (!input_logged && (p.wButtons || p.bLeftTrigger > 40 || p.bRightTrigger > 40)) {
+            input_logged = true;
+            logf("[input] first controller input on slot %lu: buttons 0x%04x", i, p.wButtons);
+        }
         g.wButtons |= p.wButtons & 0x00FF; // D-pad, START, BACK, thumb clicks map 1:1
         if (p.wButtons & 0x1000) g.bAnalogButtons[0] = 255; // A
         if (p.wButtons & 0x2000) g.bAnalogButtons[1] = 255; // B

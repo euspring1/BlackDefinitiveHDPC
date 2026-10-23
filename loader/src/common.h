@@ -69,6 +69,8 @@ struct Config {
     float mouse_sens = 2.0f;
     bool mouse_invert = false;
     float pad_sens = 1.0f;     // times the game's right stick look speeds while the controller is in use (mouselook.cpp)
+    bool first_run = false;    // no black.ini at start (settings.cpp)
+    bool auto_tune = false;    // first session only: the render size follows what the PC keeps up with (autotune.cpp)
     bool aim_hold = true;      // aim while the aim key is held (input/bindings.cpp; PC SETTINGS); the game's aim toggles
     int reticle_colour = 0x00FF00;       // black.ini RRGGBB: the reticle's tint (reticle.cpp); -1 = the game's
     int reticle_enemy_colour = 0x8C0000; // its tint over an enemy; -1 = the game's

@@ -63,7 +63,7 @@ look, bindable keys, XInput controllers, borderless fullscreen, settings in the 
    with the game's files. Only the NTSC-U build works: `game\default.xbe` must have SHA-256
    `DF2739C372D254A90AEECCF5971D12097F22D89FBB90DB021FDA96DD4DEB68F6`
    (PowerShell: `Get-FileHash game\default.xbe -Algorithm SHA256`).
-2. Extract `BlackDefinitiveHDPCv1.4.zip` into the `game` folder:
+2. Extract `BlackDefinitiveHDPCv1.4.2.zip` into the `game` folder:
 
    ```
    game\
@@ -151,6 +151,10 @@ The game runs well with high settings: high frame rates, resolution scale, HD te
 - **Draw distance** is the one setting that still lowers the frame rate a little at 2X and above, mostly in open areas.
   If the PC cannot keep up, the frameskip keeps the game at real speed (`black.exe --no-frameskip` turns it off).
 - **Weaker graphics cards**: lower the resolution scale, or use SSAO instead of GTAO.
+- **Weaker PCs**: on the first start with integrated graphics the game picks a light setup by itself, and lowers the
+  resolution scale during that first session if it cannot keep 60 fps.
+- **Optional**: `extras\DXVK\d3d9.dll` (DXVK, Vulkan) next to `black.exe` can run faster on some integrated graphics;
+  delete it to go back.
 
 Also in `game\black.ini`:
 

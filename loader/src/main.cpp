@@ -1,5 +1,6 @@
 // blackrt.dll entry: BlackMain is called by black.exe (the address-space stub) and never returns.
 #include "common.h"
+#include "autotune.h"
 
 #include <algorithm>
 #include <vector>
@@ -541,6 +542,7 @@ int run(void *reserve, unsigned reserve_size)
         std::wstring cache = g_cfg.port_dir + L"\\cache\\menus";
         if (fe_build_pages(host_full_path(g_cfg.game_dir), cache)) g_cfg.menu_cache = cache;
     }
+    autotune::start(); // first start: a light profile on integrated graphics
     if (g_cfg.fps > 30 && (!known_build || !install_fps_patches(g_cfg.fps))) g_cfg.fps = 30; // other builds: no fps patches
     if (known_build) install_framerate_patches(g_cfg.fps);
     if (!kdpc_init()) {
