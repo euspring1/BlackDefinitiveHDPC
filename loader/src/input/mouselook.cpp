@@ -26,6 +26,8 @@
 
 #include "cheats.h"
 #include "common.h"
+#include "detour.h"
+#include "input/autoaim.h"
 
 #include <algorithm>
 #include <cmath>
@@ -118,6 +120,18 @@ void install_mouselook_patches()
     }
     g_installed = true;
     logf("mouselook: view angles take mouse input directly (FUN_001bd3f0); weapon sway follows it (0x1ECF76)");
+    // CONTROLLER SENSITIVITY (PC SETTINGS > INPUT): at 0x1BD69F xmm3 is the stick's yaw speed and xmm0 its pitch speed,
+    // before the zoom factor and the frame time (mulss xmm3, xmm2; mulss xmm3, [edi+0x1C]). Not while the keyboard,
+    // whose look keys move the same stick, is in use.
+    if (hook_install("mouselook (controller sensitivity)",
+                     {{0x001BD69F, {0xF3, 0x0F, 0x59, 0xDA, 0xF3, 0x0F, 0x59, 0x5F, 0x1C}, [](HookRegs *, HookFx *fx) {
+                           if (pad_in_use() && g_cfg.pad_sens != 1.0f) {
+                               fx->xmm[3][0] *= g_cfg.pad_sens;
+                               fx->xmm[0][0] *= g_cfg.pad_sens;
+                           }
+                           return true;
+                       }}}))
+        logf("mouselook: right stick look at the controller sensitivity (%.2f)", g_cfg.pad_sens);
 }
 
 bool mouselook_installed() { return g_installed; }

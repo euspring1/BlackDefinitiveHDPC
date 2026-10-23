@@ -63,6 +63,7 @@ void settings_load()
         else if (k == "gamma") g_cfg.gamma = std::clamp(v, 0.5f, 3.0f);
         else if (k == "mouse_sens") g_cfg.mouse_sens = std::clamp(v, 0.1f, 50.0f);
         else if (k == "mouse_invert") g_cfg.mouse_invert = v != 0;
+        else if (k == "pad_sens") g_cfg.pad_sens = std::clamp(v, 0.1f, 10.0f);
         else if (k == "aim_hold") g_cfg.aim_hold = v != 0;
         else if (k == "crouch_hold") g_cfg.crouch_hold = v != 0;
         else if (k == "hd_reticle") g_cfg.hd_reticle = v != 0;
@@ -82,7 +83,10 @@ void settings_load()
         else if (k == "reload_blur") g_cfg.reload_blur = v != 0;
         else if (k == "textures") g_cfg.textures = v != 0;
         else if (k == "draw_distance") g_cfg.draw_distance = std::clamp(atoi(val), 1, 16);
-        else if (k == "input") g_cfg.input_pad = !strcmp(val, "controller");
+        else if (k == "ambient_occlusion") g_cfg.ambient_occlusion = !strcmp(val, "gtao") ? 2 : !strcmp(val, "ssao") ? 1 : std::clamp(atoi(val), 0, 2);
+        // input_mode, not v1.3's "input" (always written, so it would fix every old setup to one device)
+        else if (k == "input_mode") g_cfg.input_mode = !strcmp(val, "controller") ? 2 : !strcmp(val, "keyboard") ? 1 : 0;
+        else if (k == "input") {}
         else if (k == "language") {
             int l = lang::from_code(val);
             if (l >= 0) g_cfg.language = l;
@@ -127,6 +131,7 @@ void settings_save()
     fprintf(f, "aa = %d\nfps = %d\nwidescreen = %d\nfullscreen = %d\n", g_cfg.aa ? 1 : 0, fps, wide ? 1 : 0, g_cfg.fullscreen ? 1 : 0);
     fprintf(f, "gain = %.2f\ngamma = %.2f\n", g_cfg.gain, g_cfg.gamma);
     fprintf(f, "mouse_sens = %.3f\nmouse_invert = %d\n", g_cfg.mouse_sens, g_cfg.mouse_invert ? 1 : 0);
+    fprintf(f, "pad_sens = %.3f\n", g_cfg.pad_sens);
     fprintf(f, "aim_hold = %d\ncrouch_hold = %d\nwalk_speed = %.2f\n", g_cfg.aim_hold ? 1 : 0, g_cfg.crouch_hold ? 1 : 0, g_cfg.walk_speed);
     fprintf(f, "hd_reticle = %d\n", g_cfg.hd_reticle ? 1 : 0);
     fprintf(f, "texture_pack = %s\ntexture_pack_max = %d\n", narrow(g_cfg.texture_pack).c_str(), g_cfg.texture_pack_max);
@@ -144,8 +149,8 @@ void settings_save()
     int language = g_cfg.language_next >= 0 ? g_cfg.language_next : g_cfg.language;
     fprintf(f, "textures = %d\nlanguage = %s\n", textures ? 1 : 0, lang::code(language));
     fprintf(f, "draw_distance = %d\n", g_cfg.draw_distance);
-    bool pad = g_cfg.input_pad_next >= 0 ? g_cfg.input_pad_next != 0 : g_cfg.input_pad;
-    fprintf(f, "input = %s\n", pad ? "controller" : "keyboard");
+    fprintf(f, "ambient_occlusion = %s\n", g_cfg.ambient_occlusion == 2 ? "gtao" : g_cfg.ambient_occlusion ? "ssao" : "off");
+    fprintf(f, "input_mode = %s\n", g_cfg.input_mode == 2 ? "controller" : g_cfg.input_mode == 1 ? "keyboard" : "auto");
     fprintf(f, "skipanymovie = %d\nskip_intro = %d\n", g_cfg.skip_movies ? 1 : 0, g_cfg.skip_intro ? 1 : 0);
     fprintf(f, "cheat_unlock_all = %d\ncheat_god = %d\ncheat_health_packs = %d\n", g_cfg.cheat_unlock_all ? 1 : 0,
             g_cfg.cheat_god ? 1 : 0, g_cfg.cheat_health_packs ? 1 : 0);

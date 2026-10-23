@@ -519,6 +519,13 @@ void save_ini(FILE *f)
     }
 }
 
+bool any_key_held(bool focus)
+{
+    for (int vk = 1; vk <= 0xFE; vk++)
+        if ((vk < (int)g_script.size() && g_script[vk]) || (focus && (GetAsyncKeyState(vk) & 0x8000))) return true;
+    return false;
+}
+
 void script_hold(const std::string &name)
 {
     uint16_t k = parse_key(name);

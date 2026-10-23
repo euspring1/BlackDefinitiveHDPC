@@ -5,14 +5,17 @@
 #include <vector>
 
 #include "d3d/dispatch.h"
+#include "d3d/occlusion.h"
 #include "fe/calls.h"
 #include "fe/pages.h"
+#include "fe/prompts.h"
 #include "fov.h"
 #include "saveimport.h"
 #include "shake.h"
 #include "cpu_guard.h"
 #include "drawdist.h"
 #include "effects.h"
+#include "framerate.h"
 #include "lang.h"
 #include "reticle.h"
 #include "audio_defaults.h"
@@ -105,7 +108,8 @@ void usage()
            "  --no-aa           no anti-aliasing (default: edge-directed post filter; F9 toggles)\n"
            "  --no-seamfill     do not fill hairline cracks between geometry pieces (destructible walls)\n"
            "  --reload-blur     the original's depth blur while reloading, off by default (PC SETTINGS > MODS)\n"
-           "  --language L      en (default) or ptbr: the game's text and the port's menus (PC SETTINGS > MODS)\n"
+           "  --language L      en (default), ptbr, es, fr, de, it, id or ru: the game's text, the port's menus and the\n"
+           "                    subtitles (PC SETTINGS > MODS)\n"
            "  --draw-distance N LOD and draw distances x N: 1 (the game's, default), 2, 4, 8, 12 or 16 (PC SETTINGS > MODS)\n"
            "  --controller      prompts and menus show the controller's buttons (PC SETTINGS > INPUT)\n"
            "  --no-textures     no HD texture pack (mods\\replacements; PC SETTINGS > MODS)\n"
@@ -227,6 +231,11 @@ bool parse_args()
             if (!next(v)) return false;
             int l = lang::from_code(narrow(v).c_str());
             if (l >= 0) g_cfg.language = l;
+        } else if (a == L"--ambient-occlusion") {
+            settings_mark_cli("ambient_occlusion");
+            std::wstring v;
+            if (!next(v)) return false;
+            g_cfg.ambient_occlusion = v == L"gtao" ? 2 : v == L"ssao" ? 1 : 0;
         } else if (a == L"--draw-distance") {
             settings_mark_cli("draw_distance");
             std::wstring v;
@@ -240,7 +249,7 @@ bool parse_args()
             settings_mark_cli("cheat_god");
             settings_mark_cli("cheat_health_packs");
         }
-        else if (a == L"--controller") { g_cfg.input_pad = true; settings_mark_cli("input"); }
+        else if (a == L"--controller") { g_cfg.input_mode = 2; settings_mark_cli("input_mode"); }
         else if (a == L"--no-textures") { g_cfg.textures = false; settings_mark_cli("textures"); }
         else if (a == L"--game-override") {
             if (!next(g_cfg.game_override)) return false;
@@ -341,12 +350,16 @@ bool parse_args()
         else target = a;
     }
     LocalFree(argv);
-    if (target.empty()) target = L"game\\default.xbe";
     // The port keeps its own files beside black.exe (the release's port folder, next to game).
     wchar_t exe[MAX_PATH];
     DWORD n = GetModuleFileNameW(nullptr, exe, MAX_PATH);
     std::wstring exe_path(exe, n);
     g_cfg.port_dir = exe_path.substr(0, exe_path.find_last_of(L"\\/"));
+    // No game given: the default.xbe beside black.exe (the release is extracted into the game's folder, whatever its
+    // name), else a game\ folder found as below.
+    if (target.empty() && GetFileAttributesW((g_cfg.port_dir + L"\\default.xbe").c_str()) != INVALID_FILE_ATTRIBUTES)
+        target = g_cfg.port_dir + L"\\default.xbe";
+    if (target.empty()) target = L"game\\default.xbe";
     // Started from a shortcut or another folder: if a relative game path is not found here, look for it
     // from black.exe's own folder upwards (port -> the folder with game; work\run -> work -> project root) and make
     // that folder current, so relative paths given on the command line (--hdd, --log) and notes\ resolve against it.
@@ -475,8 +488,8 @@ int run(void *reserve, unsigned reserve_size)
     if (!g_xbe.load(g_cfg.xbe_path, err)) {
         wchar_t full[MAX_PATH];
         if (!GetFullPathNameW(g_cfg.xbe_path.c_str(), MAX_PATH, full, nullptr)) wcscpy_s(full, g_cfg.xbe_path.c_str());
-        startup_error("cannot load " + narrow(full) + ": " + err + "\n\nPut black.exe and blackrt.dll next to the folder that "
-                      "holds the game's files (game\\default.xbe), or give that folder on the command line.");
+        startup_error("cannot load " + narrow(full) + ": " + err + "\n\nPut black.exe and blackrt.dll in the folder that "
+                      "holds the game's files (default.xbe), or give that folder on the command line.");
         return 1;
     }
     std::string title = narrow(g_xbe.title);
@@ -521,12 +534,15 @@ int run(void *reserve, unsigned reserve_size)
     if (known_build) install_reticle_colours();
     if (known_build) audio_defaults_init();
     if (known_build) install_fe_calls();
+    if (known_build) prompts::install();
+    if (known_build) occlusion::install();
     mods::scan(); // before the pages are built: the MODS page lists them
     if (known_build && g_cfg.pc_menus) { // the in-game PC SETTINGS pages, from the user's own front-end file
         std::wstring cache = g_cfg.port_dir + L"\\cache\\menus";
         if (fe_build_pages(host_full_path(g_cfg.game_dir), cache)) g_cfg.menu_cache = cache;
     }
     if (g_cfg.fps > 30 && (!known_build || !install_fps_patches(g_cfg.fps))) g_cfg.fps = 30; // other builds: no fps patches
+    if (known_build) install_framerate_patches(g_cfg.fps);
     if (!kdpc_init()) {
         logf("could not start the kernel DPC/timer thread");
         return 1;

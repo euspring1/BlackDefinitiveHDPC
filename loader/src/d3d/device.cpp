@@ -5,6 +5,7 @@
 #include "audio_defaults.h"
 #include "d3d/cursor.h"
 #include "d3d/fps.h"
+#include "d3d/occlusion.h"
 #include "d3d/subtitles.h"
 #include "fe/restart.h"
 #include "cheats.h"
@@ -572,6 +573,27 @@ void present_backbuffer()
     }
     s->Release();
 }
+
+} // namespace
+
+bool scene_targets(SceneTargets &out)
+{
+    if (!g_st.render_target || !g_st.depth_stencil || frame_skipped()) return false;
+    HostRT &h = host_rt(g_st.render_target);
+    uint64_t zkey;
+    HostZ &hz = host_z(g_st.depth_stencil, h.xw, h.xh, &zkey);
+    if (!h.tex || !hz.tex) return false;
+    D3DSURFACE_DESC zd;
+    hz.tex->GetLevelDesc(0, &zd);
+    if (zd.Width < h.w || zd.Height < h.h) return false;
+    const Viewport &v = g_st.viewport;
+    out = {h.tex, hz.tex, hz.surf, h.w, h.h, {v.X * h.sx, v.Y * h.sy, v.Width * h.sx, v.Height * h.sy}, v.MinZ, v.MaxZ};
+    return true;
+}
+
+void forget_host_state() { forget_sent_shaders(); }
+
+namespace {
 
 // A colour target that is never sampled (for passes that only write depth).
 IDirect3DTexture9 *scratch_rt(uint32_t w, uint32_t h)
@@ -1141,6 +1163,7 @@ namespace {
 void release_host_targets()
 {
     host3d::end_scene();
+    occlusion::release();
     IDirect3DDevice9 *d = host3d::dev();
     d->SetRenderTarget(0, g_host_backbuffer);
     d->SetDepthStencilSurface(g_host_depth);

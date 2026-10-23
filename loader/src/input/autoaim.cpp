@@ -17,6 +17,7 @@
 #include "input/autoaim.h"
 
 #include "common.h"
+#include "fe/prompts.h"
 
 #include <cstring>
 
@@ -92,8 +93,11 @@ void autoaim_set_mode(int mode)
 
 int autoaim_mode() { return !g_cfg.autoaim ? 0 : g_cfg.autoaim_pad_only ? 2 : 1; }
 
+bool pad_in_use() { return g_pad_last; }
+
 void autoaim_note_input(bool pad, bool keyboard_mouse)
 {
+    prompts::note_input(pad, keyboard_mouse);
     bool last = g_pad_last;
     if (pad) g_pad_last = true;
     else if (keyboard_mouse) g_pad_last = false;

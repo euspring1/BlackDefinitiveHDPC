@@ -2,19 +2,22 @@
 //
 // The game has no subtitle support and .xmv (the Xbox movie container) has no public encoder, so the text cannot be
 // baked into the movies. Instead the port draws it over the movie: the file is a plain .srt (the format every
-// subtitle editor exports) in an enabled mod's subtitles\ folder, named after the movie it belongs to:
+// subtitle editor exports) named after the movie it belongs to, in the language's folder (lang.h; the BLACK-SUBTITLES
+// hub's tracks, English for a movie the language has none of) or an enabled mod's subtitles\ folder:
 //
-//   mods\xcontroltokeyboard_ptbr\subtitles\02_n.srt
+//   mods\language\ptbr\subtitles\03_N.srt
+//   mods\my_subtitles\subtitles\03_N.srt
 //
 // so a mod carries its own subtitles and turning the mod off turns them off. The movie player's state and file name
 // are the ones the port already reads (input/movies.cpp): game object *0x2D45F0 + 0x2026C, name at +0x84, state at
-// +0x1A8 (0x1C playing). Time is counted in the port's frames (the world runs on a fixed step, so this is the same
-// clock the movie uses); a movie that plays again starts the counter over.
+// +0x1A8 (0x1C playing). Time is the real time since the movie started playing (the movie keeps to it); a movie
+// that plays again starts the clock over.
 #include "d3d/subtitles.h"
 
 #include "common.h"
 #include "d3d/device.h"
 #include "d3d/host.h"
+#include "lang.h"
 #include "mods.h"
 
 #include <d3d9.h>
@@ -147,13 +150,16 @@ void load_dir(const std::wstring &dir, const std::string &tag)
     FindClose(h);
 }
 
+// Later sets replace earlier ones movie by movie: English, the language played (lang.h), then the enabled mods.
 void load_all()
 {
     g_loaded = true;
     g_loaded_rev = mods::revision();
     g_subs.clear();
+    load_dir(lang::root(lang::kEnglish) + L"\\subtitles", "en");
+    if (lang::current() != lang::kEnglish) load_dir(lang::root() + L"\\subtitles", lang::code(lang::current()));
     for (const mods::Mod &m : mods::list()) {
-        if (!m.on) continue; // a subtitle file belongs to its mod: off is off
+        if (!m.on || m.blocked) continue; // a subtitle file belongs to its mod: off is off
         load_dir(m.base + L"\\subtitles", m.folder);
     }
 }
@@ -319,9 +325,14 @@ void subtitles_tick(int screen_w, int screen_h)
         return;
     }
     std::string name = lower(std::string((const char *)p + kName));
+    LARGE_INTEGER now, freq;
+    QueryPerformanceCounter(&now);
+    QueryPerformanceFrequency(&freq);
+    static LONGLONG start;
     if (!g_was_playing || name != g_movie) { // a new movie (or the same one playing again): time from here
         g_movie = name;
         g_frames = 0;
+        start = now.QuadPart;
     }
     g_was_playing = true;
     g_frames++;
@@ -334,7 +345,7 @@ void subtitles_tick(int screen_w, int screen_h)
         }
         return;
     }
-    double t = g_frames / (double)g_cfg.fps;
+    double t = (double)(now.QuadPart - start) / (double)freq.QuadPart; // drawn frames are fewer under frameskip
     const std::wstring *text = nullptr;
     for (const Line &l : it->second)
         if (t >= l.from && t <= l.to) {

@@ -27,4 +27,15 @@ void request_render_rebuild(); // re-create every host target after the next Swa
 // catches up with real time (device.cpp, decided at each Swap).
 bool frame_skipped();
 
+// The bound render target and its depth buffer as host textures (ambient occlusion, d3d/occlusion.cpp): false
+// unless the depth is an INTZ texture as large as the target. vp: the game's viewport in the target's pixels.
+struct SceneTargets {
+    IDirect3DTexture9 *color, *depth;
+    IDirect3DSurface9 *depth_surface;
+    uint32_t w, h;
+    float vp[4], min_z, max_z;
+};
+bool scene_targets(SceneTargets &out);
+void forget_host_state(); // the host device's state was changed outside the game's draws: re-send it
+
 } // namespace xd3d

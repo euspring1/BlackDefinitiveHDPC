@@ -317,16 +317,25 @@ void read_pad(uint32_t port, XGamepad &g)
         merge_stick(g.sThumbLX, g.sThumbLY, p.sThumbLX, p.sThumbLY);
         merge_stick(g.sThumbRX, g.sThumbRY, p.sThumbRX, p.sThumbRY);
     }
-    // The controller in use: a button, a trigger or a stick past a dead zone (auto-aim "controller only").
+    apply_presses(g); // tests: a scripted controller press counts as the controller
+    // The controller in use: a button, a trigger or a stick past a dead zone (auto-aim "controller only", the prompts).
     bool pad = (g.wButtons & 0x00FF) != 0;
     for (int i = 0; i < 8; i++) pad |= g.bAnalogButtons[i] > 40;
     for (int16_t v : {g.sThumbLX, g.sThumbLY, g.sThumbRX, g.sThumbRY}) pad |= v > 9000 || v < -9000;
-    apply_presses(g);
     bool focus = GetForegroundWindow() == host3d::window();
     bool live = focus && host3d::mouse_captured();
     int raw_wheel;
     bool mouse_moved;
     int wheel = mouse_look(live, &raw_wheel, &mouse_moved);
+    { // the pointer moved over the menus (the mouse is not captured there)
+        static POINT last;
+        POINT now;
+        if (focus && GetCursorPos(&now)) {
+            if ((now.x != last.x || now.y != last.y) && (last.x || last.y)) mouse_moved = true;
+            last = now;
+        }
+    }
+    mouse_moved |= bindings::any_key_held(focus); // menu keys too, which do not go through the pad
     XGamepad before = g;
     if (!bindings::capture_poll(focus, raw_wheel)) // while the key bindings page waits for a key, keys bind instead
         bindings::apply(g.wButtons, g.bAnalogButtons, g.sThumbLX, g.sThumbLY, g.sThumbRX, g.sThumbRY, focus, live, wheel);

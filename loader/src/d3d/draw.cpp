@@ -5,6 +5,7 @@
 
 #include "d3d/device.h"
 #include "d3d/dispatch.h"
+#include "d3d/occlusion.h"
 #include "d3d/host.h"
 #include "d3d/pshader.h"
 #include "d3d/pushbuf.h"
@@ -992,6 +993,7 @@ bool begin_draw(DrawCtx &ctx)
             upload_vs_constants(d, hv);
             ctx.path = Path::Prog;
             ctx.vs = vs;
+            occlusion::note_draw();
         }
     }
     if (ctx.path == Path::None) {

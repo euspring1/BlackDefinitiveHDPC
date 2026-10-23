@@ -26,6 +26,7 @@
 #include "fe/bind_list.h"
 #include "fe/pause_ui.h"
 #include "fe/pc_settings.h"
+#include "fe/prompts.h"
 #include "fe/vars.h"
 #include "input/bindings.h"
 #include "lang.h"
@@ -34,6 +35,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
+#include <map>
 
 namespace {
 
@@ -1696,16 +1698,13 @@ int button_glyphs_to_keys(uint32_t string_key, std::string &t)
         {0x21, 15}, // D-pad down: health pack
     };
     int n = 0;
-    // The controller options' ON / OFF pair stands side by side; the Portuguese "Ligado" / "  Desligado" are too long
-    // for it and overlap, so they read as one word. Short words like the original's.
-    if (string_key == 0x11c3b459 && t == "Ligado") t = "Sim", n++;
-    if (string_key == 0x45c04449 && t.find("Desligado") != std::string::npos) t = "N\xC3\xA4o", n++;
-    if (g_cfg.input_pad) return n; // INPUT: CONTROLLER keeps the game's button icons
+    const std::string enter = lang::font_text("ENTER");
     // "Press START" before the main menu (and on later prompts): the port's menus take Enter. The Portuguese
     // translation says "o botäo start" (its font draws ä as ã).
     if (string_key == 0x905e4ee0 || string_key == 0x2fcce936 || string_key == 0x661a3a37) {
-        for (auto [from, to] : {std::pair<const char *, const char *>{"o bot\xC3\xA4o start", "a tecla ENTER"}, {"START", "ENTER"},
-                                {"Start", "ENTER"}, {"start", "ENTER"}})
+        const std::string tecla = "a tecla " + enter;
+        for (auto [from, to] : {std::pair<const char *, const char *>{"o bot\xC3\xA4o start", tecla.c_str()}, {"START", enter.c_str()},
+                                {"Start", enter.c_str()}, {"start", enter.c_str()}})
             for (size_t p = t.find(from); p != std::string::npos; p = t.find(from, p + strlen(to))) {
                 t.replace(p, strlen(from), to);
                 n++;
@@ -1715,16 +1714,17 @@ int button_glyphs_to_keys(uint32_t string_key, std::string &t)
     // take Enter and Backspace. Lines ending in ':' are the controller screen's button list and keep them.
     size_t last = t.find_last_not_of(" \r\n");
     if (last == std::string::npos || t[last] != ':')
-        for (auto [from, to] : {std::pair<const char *, const char *>{"\xC2\xB2", "[ENTER]"}, {"\xC2\xB9", "[BACKSPACE]"}})
+        for (auto [from, to] : {std::pair<const char *, std::string>{"\xC2\xB2", lang::font_text("[ENTER]")},
+                                {"\xC2\xB9", lang::font_text("[BACKSPACE]")}})
             for (size_t p = t.find(from); p != std::string::npos; p = t.find(from, p)) {
                 t.replace(p, 2, to);
-                p += strlen(to);
+                p += to.size();
                 n++;
             }
     for (size_t p = t.find("\xEF\x80"); p != std::string::npos && p + 2 < t.size(); p = t.find("\xEF\x80", p)) {
         uint8_t code = (uint8_t)t[p + 2] & 0x3F;
         std::string key;
-        if (code == 0x0B && string_key == 0xd06fd1c1) key = "ENTER"; // "<A> to continue" after a hint
+        if (code == 0x0B && string_key == 0xd06fd1c1) key = enter; // "<A> to continue" after a hint
         else
             for (const Glyph &g : kGlyphs)
                 if (g.code == code) key = bindings::hud_action_key(g.action);
@@ -1732,7 +1732,7 @@ int button_glyphs_to_keys(uint32_t string_key, std::string &t)
             p += 3;
             continue;
         }
-        key = "[" + key + "]";
+        key = lang::font_text("[" + key + "]");
         t.replace(p, 3, key);
         p += key.size();
         n++;
@@ -1743,18 +1743,21 @@ int button_glyphs_to_keys(uint32_t string_key, std::string &t)
 // The menus' button legend at the bottom of the screen (Core.bin, movie "corexbox"): SELECT with the D-pad's arrows
 // (sprites 14, 15, 16: arrows char 10 around char 8), CONFIRM with the A button (22: "Button" = sprite 19) and BACK
 // with B (28: sprite 25); each places its label sprite as "Text" at x 16 (the text field 2 / -9.3 inside it). The
-// icons are scaled to nothing, a text with the key the port's menus take goes where they were, and the label moves
-// right past it.
+// icons are scaled to nothing, a text bound to &PC_V19..21 goes where they were (fe/prompts.cpp: the key the port's
+// menus take, or the controller's button while it is the device in use), and the label moves right past the key.
 void legend_keys(Movie &mv)
 {
     constexpr float kCharW = 9.5f, kKeyX = -8.0f, kGap = 8.0f; // rough width of one character; where the key text starts
     struct Item {
-        int sprite, text_char;
-        const char *key;
+        int sprite, text_char, var;
     };
-    const char *arrows = lang::tr("[ARROWS]");
-    const Item items[] = {{14, 12, arrows}, {15, 12, arrows}, {16, 12, arrows}, {22, 20, "[ENTER]"}, {28, 26, "[BACKSPACE]"}};
-    for (const Item &it : items) {
+    const Item items[] = {{14, 12, 0}, {15, 12, 0}, {16, 12, 0}, {22, 20, 1}, {28, 26, 2}};
+    for (const Item &item : items) {
+        const std::string key = narrow(prompts::legend_keys()[item.var]);
+        struct {
+            int sprite, text_char;
+            const char *key;
+        } it = {item.sprite, item.text_char, key.c_str()};
         uint32_t sp = mv.character(it.sprite);
         bool label = false;
         for (uint32_t ctl : mv.controls(sp, 0)) {
@@ -1771,59 +1774,82 @@ void legend_keys(Movie &mv)
             }
         }
         if (!label) throw Error("legend sprite " + std::to_string(it.sprite) + " has no Text");
-        int t = mv.add_character(mv.clone_text(mv.character(it.text_char), it.key, it.key));
+        int t = mv.add_character(mv.clone_text(mv.character(it.text_char), it.key, var(fevar::kLegend + item.var)));
         mv.append_control(sp, 0, mv.place(31, t, 6, kKeyX + 2.0f, -9.4f));
     }
 }
 
 // The game's text (language\strings\MainUS.bin: a magic word, a word, the count n, the table offset 16; n offsets,
 // ascending; each entry a 4-byte key (entries sorted by key) and a NUL-terminated string, padded to 4 bytes except the
-// last): XBOX in its messages (saving and loading, free blocks, the hard disk check) reads COMPUTER instead, "XBOX
-// CONSOLE" just COMPUTER. Keys and order stay; only the offsets move.
+// last). The game's English bank gives the keys and their order; LANGUAGE puts the language's text in (lang.h: its
+// menu.jsonl by string id, or an older strings\MainUS.bin of its folder). XBOX in the messages (saving and loading,
+// free blocks, the hard disk check) reads the language's word for the PC. Each string is made twice: with the
+// controller's button icons and with the bound keys (fe/prompts.cpp switches between them live); the file gets the
+// form of the device in use at start.
 bool patch_strings(const std::wstring &game_dir, const std::wstring &out_root)
 {
     const std::wstring rel = L"\\language\\strings\\MainUS.bin";
-    // LANGUAGE: the Portuguese text ships with the port (lang.h); English is the game's own
     std::wstring src = game_dir + rel;
-    if (lang::portuguese()) {
-        std::wstring pt = lang::root() + L"\\strings\\MainUS.bin";
-        if (GetFileAttributesW(pt.c_str()) != INVALID_FILE_ATTRIBUTES) src = pt;
-        else logf("fe: %s not found; the game's own text is used", narrow(pt).c_str());
+    std::map<uint32_t, std::string> text;
+    bool catalog = lang::game_text(text);
+    if (!catalog && lang::current() != lang::kEnglish) {
+        std::wstring bank = lang::root() + L"\\strings\\MainUS.bin";
+        if (GetFileAttributesW(bank.c_str()) != INVALID_FILE_ATTRIBUTES) src = bank;
+        else logf("fe: no text for %s in %s; the game's own text is used", lang::code(g_cfg.language), narrow(lang::root()).c_str());
     }
     Bytes in;
     if (!read_file(src, in)) {
         logf("fe: %s not found", narrow(src).c_str());
         return false;
     }
-    // XBOX in the messages: the computer's, in the language played
-    const char *computer = lang::portuguese() ? "COMPUTADOR" : "COMPUTER";
-    const char *console = lang::portuguese() ? "CONSOLE XBOX" : "XBOX CONSOLE";
+    // XBOX in the messages: the PC, in the language played (the console's name first, as each language writes it)
+    const std::string computer = lang::computer();
+    const char *const xbox[] = {"XBOX CONSOLE", "CONSOLE XBOX", "CONSOLA XBOX", "console Xbox", "XBOX-KONSOLE",
+                                "KOHCOLJ XBOX", "XBOX", "Xbox"};
     try {
         if (in.size() < 16) throw Error("too short");
         uint32_t n = rd(in, 8), table = rd(in, 12);
         if (table != 16 || table + 4ull * n > in.size()) throw Error("no string table");
-        Bytes out(in.begin(), in.begin() + table + 4 * n);
-        int changed = 0, prompts = 0, prompt_strings = 0;
+        Bytes pad(in.begin(), in.begin() + table + 4 * n), keys = pad;
+        std::vector<prompts::Text> both;
+        int changed = 0, from_catalog = 0, glyphs = 0, prompt_strings = 0;
         for (uint32_t i = 0; i < n; i++) {
             uint32_t at = rd(in, table + 4 * i), end = i + 1 < n ? rd(in, table + 4 * (i + 1)) : (uint32_t)in.size();
             if (at + 4 > end || end > in.size()) throw Error("an entry out of order");
-            std::string s((const char *)&in[at + 4], strnlen((const char *)&in[at + 4], end - at - 4)), t = s;
-            for (auto [from, to] : {std::pair<const char *, const char *>{console, computer}, {"XBOX", computer}})
-                for (size_t p = t.find(from); p != std::string::npos; p = t.find(from, p + strlen(to)))
-                    t.replace(p, strlen(from), to);
+            uint32_t key = rd(in, at);
+            std::string s((const char *)&in[at + 4], strnlen((const char *)&in[at + 4], end - at - 4));
+            if (catalog) {
+                auto it = text.find(key);
+                if (it != text.end()) s = it->second, from_catalog++;
+            }
+            std::string t = s;
+            for (const char *from : xbox)
+                for (size_t p = t.find(from); p != std::string::npos; p = t.find(from, p + computer.size()))
+                    t.replace(p, strlen(from), computer);
+            // The controller options' ON / OFF pair stands side by side; the Portuguese "Ligado" / "  Desligado" are
+            // too long for it and overlap, so they read as one word. Short words like the original's.
+            if (key == 0x11c3b459 && t == "Ligado") t = "Sim";
+            if (key == 0x45c04449 && t.find("Desligado") != std::string::npos) t = lang::font_text("Não");
             changed += t != s;
-            std::string u = t;
-            prompts += button_glyphs_to_keys(rd(in, at), t);
-            prompt_strings += t != u;
-            wr(out, table + 4 * i, (uint32_t)out.size());
-            out.insert(out.end(), in.begin() + at, in.begin() + at + 4);
-            out.insert(out.end(), t.begin(), t.end());
-            out.push_back(0);
-            while (i + 1 < n && out.size() % 4) out.push_back(0);
+            prompts::Text v{key, t, t};
+            int g = button_glyphs_to_keys(key, v.keys);
+            glyphs += g;
+            prompt_strings += g > 0;
+            for (Bytes *out : {&pad, &keys}) {
+                const std::string &str = out == &pad ? v.pad : v.keys;
+                wr(*out, table + 4 * i, (uint32_t)out->size());
+                out->insert(out->end(), in.begin() + at, in.begin() + at + 4);
+                out->insert(out->end(), str.begin(), str.end());
+                out->push_back(0);
+                while (i + 1 < n && out->size() % 4) out->push_back(0);
+            }
+            both.push_back(std::move(v));
         }
-        if (!write_file(out_root + rel, out)) return false;
-        logf("fe: game text (%s): %d strings say %s instead of XBOX", lang::code(g_cfg.language), changed, computer);
-        logf("fe: game text: %d controller button icons in %d strings show the bound keys", prompts, prompt_strings);
+        if (!write_file(out_root + rel, g_cfg.input_pad ? pad : keys)) return false;
+        prompts::set_text(std::move(both));
+        logf("fe: game text (%s): %d strings from %s, %d changed (XBOX: %s)", lang::code(g_cfg.language), from_catalog,
+             catalog ? "menu.jsonl" : narrow(src).c_str(), changed, computer.c_str());
+        logf("fe: game text: %d controller button icons in %d strings have a keyboard form", glyphs, prompt_strings);
         return true;
     } catch (const std::exception &e) {
         logf("fe: %s is not laid out as expected (%s)", narrow(src).c_str(), e.what());
@@ -1929,13 +1955,13 @@ bool fe_build_pages(const std::wstring &game_dir, const std::wstring &out_root)
     logf("fe: PC SETTINGS pages: main menu %s, pause menu %s (%s)", main_ok ? "on" : "off", pause_ok ? "on" : "off",
          narrow(out_root).c_str());
     Bytes core;
-    bool legend_ok = !g_cfg.input_pad && rebuild(game_dir, L"Core.bin", [](Container &c) { // CONTROLLER: the game's icons
+    bool legend_ok = rebuild(game_dir, L"Core.bin", [](Container &c) { // keys or buttons, live (fe/prompts.cpp)
         Movie mv(movie(c, "corexbox"));
         legend_keys(mv);
         c.movies["corexbox"] = mv.build();
     }, core) && write_file(dir + L"Core.bin", core);
     if (!legend_ok) DeleteFileW((dir + L"Core.bin").c_str());
-    logf("fe: menu button legend %s", legend_ok ? "shows keys" : "unchanged");
+    logf("fe: menu button legend %s", legend_ok ? "follows the device in use" : "unchanged");
     bool text_ok = patch_strings(game_dir, out_root);
     return main_ok || pause_ok || text_ok;
 }

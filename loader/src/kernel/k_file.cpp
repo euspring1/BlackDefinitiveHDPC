@@ -145,8 +145,8 @@ NTSTATUS resolve(HANDLE root, const XANSI_STRING *name, Resolved &r)
                     break;
                 }
             }
-        // LANGUAGE: the Portuguese fonts (and the likes) shipped with the port stand in for the game's language\ files
-        if (!have && lang::portuguese() && _strnicmp(rest.c_str(), "\\language\\", 10) == 0) {
+        // LANGUAGE: a language's fonts (and the likes) shipped with the port stand in for the game's language\ files
+        if (!have && lang::current() != lang::kEnglish && _strnicmp(rest.c_str(), "\\language\\", 10) == 0) {
             std::wstring cand = lang::root() + widen(rest.substr(9));
             DWORD a = GetFileAttributesW(cand.c_str());
             if (a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY)) {

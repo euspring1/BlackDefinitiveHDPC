@@ -9,6 +9,7 @@
 #include "d3d/host.h"
 #include "drawdist.h"
 #include "fe/bind_list.h"
+#include "fe/prompts.h"
 #include "fe/vars.h"
 #include "fov.h"
 #include "input/autoaim.h"
@@ -267,12 +268,9 @@ const Row kRows[] = {
     {"TEXTURES", 2, [] { return (int)(g_cfg.textures_next >= 0 ? g_cfg.textures_next != 0 : g_cfg.textures); },
      [](int i) { g_cfg.textures_next = (i != 0) == g_cfg.textures ? -1 : i; },
      [](int i) { return on_off(i) + ((i != 0) != g_cfg.textures ? L" (NEXT START)" : L""); }},
-    {"LANGUAGE", 2, [] { return g_cfg.language_next >= 0 ? g_cfg.language_next : g_cfg.language; },
+    {"LANGUAGE", lang::kCount, [] { return g_cfg.language_next >= 0 ? g_cfg.language_next : g_cfg.language; },
      [](int i) { g_cfg.language_next = i == g_cfg.language ? -1 : i; },
-     [](int i) {
-         // each language in its own words
-         return std::wstring(i == lang::kPortuguese ? L"PORTUGUÊS (BR)" : L"ENGLISH") + (i != g_cfg.language ? L" (NEXT START)" : L"");
-     }},
+     [](int i) { return lang::name(i) + (i != g_cfg.language ? L" (NEXT START)" : L""); }}, // each in its own words
     // MODS (after LANGUAGE): applies at once
     {"DRAW DISTANCE", kDistN, [] { return distance_get(); },
      [](int i) {
@@ -280,10 +278,9 @@ const Row kRows[] = {
          drawdist_set(g_cfg.draw_distance);
      },
      [](int i) { return number((float)kDistances[i], L"%.0fX") + (i == 0 ? L" (ORIGINAL)" : L""); }},
-    // INPUT: the prompts' buttons, built into the game's text at start
-    {"INPUT DEVICE", 2, [] { return (int)(g_cfg.input_pad_next >= 0 ? g_cfg.input_pad_next != 0 : g_cfg.input_pad); },
-     [](int i) { g_cfg.input_pad_next = (i != 0) == g_cfg.input_pad ? -1 : i; },
-     [](int i) { return std::wstring(i ? L"CONTROLLER" : L"MOUSE/KEYBOARD") + ((i != 0) != g_cfg.input_pad ? L" (NEXT START)" : L""); }},
+    // INPUT: the prompts' buttons: the device in use, or always one (fe/prompts.cpp), at once
+    {"INPUT DEVICE", 3, [] { return g_cfg.input_mode; }, [](int i) { prompts::set_mode(i); },
+     [](int i) { return std::wstring(i == 2 ? L"CONTROLLER" : i == 1 ? L"MOUSE/KEYBOARD" : L"AUTOMATIC"); }},
     // CHEATS (cheats.cpp)
     {"UNLOCK ALL", 2, [] { return (int)g_cfg.cheat_unlock_all; }, [](int i) { g_cfg.cheat_unlock_all = i != 0; },
      [](int i) { return on_off(i); }},
@@ -291,13 +288,20 @@ const Row kRows[] = {
      [](int i) { return on_off(i); }},
     {"INFINITE HEALTH PACKS", 2, [] { return (int)g_cfg.cheat_health_packs; }, [](int i) { g_cfg.cheat_health_packs = i != 0; },
      [](int i) { return on_off(i); }},
+    // INPUT (after INPUT DEVICE): the right stick's look speed, 1 = the game's
+    {"CONTROLLER SENSITIVITY", kSteps, [] { return step_of(g_cfg.pad_sens, 0.25f, 0.25f); },
+     [](int i) { g_cfg.pad_sens = 0.25f * (i + 1); },
+     [](int i) { return number(0.25f * (i + 1), L"%.2f") + (i == 3 ? L" (ORIGINAL)" : L""); }, true},
+    // MODS (in LANGUAGE's old place): at once
+    {"AMBIENT OCCLUSION", 3, [] { return g_cfg.ambient_occlusion; }, [](int i) { g_cfg.ambient_occlusion = i; },
+     [](int i) { return std::wstring(i == 2 ? L"GTAO" : i ? L"SSAO" : L"OFF"); }},
 };
 constexpr int kRowN = sizeof kRows / sizeof kRows[0];
 constexpr int kKeyBindings = 15;
 constexpr int kAimMode = 16, kCrouchMode = 17, kWeaponFov = 18, kFpsCounter = 19, kSubtitles = 20;
 constexpr int kScale = 21, kAnisoRow = 22, kWindowRow = 23, kCameraShake = 24, kVsync = 25;
 constexpr int kReloadBlur = 26, kTextures = 27, kLanguage = 28, kDrawDistance = 29, kInputDevice = 30;
-constexpr int kCheatUnlock = 31, kCheatGod = 32, kCheatPacks = 33;
+constexpr int kCheatUnlock = 31, kCheatGod = 32, kCheatPacks = 33, kPadSens = 34, kOcclusion = 35;
 // Rows past the fixed ones are the mods found in <port>\mods: one ON/OFF line each (mods.h).
 int mod_count() { return (int)mods::list().size(); }
 
@@ -319,7 +323,7 @@ const std::vector<Group> &groups()
 const Group &mods_group()
 {
     static Group g;
-    g = {"PCMods", lang::tr("MODS"), {kCameraShake, kReloadBlur, kVsync, kTextures, kLanguage, kDrawDistance}};
+    g = {"PCMods", lang::tr("MODS"), {kCameraShake, kReloadBlur, kVsync, kTextures, kOcclusion, kDrawDistance}};
     const int room = fevar::kRows - (int)g.rows.size();
     for (int i = 0; i < mod_count() && i < room; i++) g.rows.push_back(kRowN + i);
     if (mod_count() > room) {
@@ -332,7 +336,7 @@ const Group &mods_group()
 // INPUT: the row below MODS on the PC SETTINGS page
 const Group &input_group()
 {
-    static const Group g = {"PCInput", lang::tr("INPUT"), {kInputDevice}};
+    static const Group g = {"PCInput", lang::tr("INPUT"), {kInputDevice, kPadSens, kLanguage}};
     return g;
 }
 

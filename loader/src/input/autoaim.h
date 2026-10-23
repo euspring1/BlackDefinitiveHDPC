@@ -8,3 +8,4 @@ void autoaim_set_mode(int mode);
 int autoaim_mode();
 // Once per pad poll (input/xinput.cpp): whether the controller / the keyboard or mouse was used in it.
 void autoaim_note_input(bool pad, bool keyboard_mouse);
+bool pad_in_use(); // the controller, not the keyboard / mouse, was used last

@@ -68,6 +68,7 @@ struct Config {
     // scale most PC shooters use.
     float mouse_sens = 2.0f;
     bool mouse_invert = false;
+    float pad_sens = 1.0f;     // times the game's right stick look speeds while the controller is in use (mouselook.cpp)
     bool aim_hold = true;      // aim while the aim key is held (input/bindings.cpp; PC SETTINGS); the game's aim toggles
     int reticle_colour = 0x00FF00;       // black.ini RRGGBB: the reticle's tint (reticle.cpp); -1 = the game's
     int reticle_enemy_colour = 0x8C0000; // its tint over an enemy; -1 = the game's
@@ -78,7 +79,7 @@ struct Config {
     std::wstring texture_pack;
     bool textures = true;        // TEXTURES (PC SETTINGS > MODS): use the pack; read at start (textures_next: the next run's)
     int textures_next = -1;
-    int language = 0;            // LANGUAGE (PC SETTINGS > MODS): 0 English, 1 Brazilian Portuguese (lang.h); read at start
+    int language = 0;            // LANGUAGE (PC SETTINGS > MODS): lang.h's eight; read at start
     int language_next = -1;      // a menu choice for the next run (-1: none)
     int texture_pack_max = 2048; // black.ini texture_pack_max: larger pack textures are loaded from a smaller mip
     bool crouch_hold = true;   // crouch while the key is held, overriding the profile's toggle option (input/mouselook.cpp)
@@ -94,8 +95,10 @@ struct Config {
     bool camera_shake = true;    // the view shakes at explosions as in the original (shake.cpp; PC SETTINGS > MODS)
     bool reload_blur = false;    // the reload's depth blur of the original, off by default (effects.cpp; PC SETTINGS > MODS)
     int draw_distance = 1;       // LOD and draw distances x 1 (the game's, default), 2, 4, 8, 12, 16 (drawdist.cpp; PC SETTINGS > MODS)
-    bool input_pad = false;      // INPUT (PC SETTINGS > INPUT): the prompts show the controller's buttons instead of the
-    int input_pad_next = -1;     // keys; the text is built at start (fe/pages.cpp), so a choice applies at the next one
+    int ambient_occlusion = 0;   // 0 off, 1 SSAO, 2 GTAO (d3d/occlusion.cpp; PC SETTINGS > MODS)
+    int input_mode = 0;          // INPUT DEVICE (PC SETTINGS > INPUT): the prompts follow the device in use (0), or show
+                                 // the keys (1) or the controller's buttons (2) (fe/prompts.cpp)
+    bool input_pad = false;      // the controller's buttons are shown now
     bool vsync = false;          // Present waits for the monitor's refresh (d3d/host.cpp; PC SETTINGS > MODS)
     bool subtitles = false;      // draw .srt subtitles over the movies (an enabled mod's subtitles\ folder; off: some
                                  // versions of the game have them in the videos)
