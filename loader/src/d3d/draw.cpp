@@ -458,6 +458,7 @@ Prim conv_prim(uint32_t xprim, uint32_t verts)
 
 std::vector<uint16_t> g_quad_indices;
 std::vector<uint16_t> g_tmp_indices;
+std::vector<uint16_t> g_tmp_rebased; // draw_indexed_up: indices counted from the first vertex used
 
 const uint16_t *quad_indices(uint32_t quads)
 {
@@ -1033,6 +1034,17 @@ void draw_indexed_up(uint32_t xprim, uint32_t nidx, const uint16_t *idx, const v
     Prim p = conv_prim(xprim, nidx);
     if (!p.count) return;
     perf::add_draw(mx - mn + 1, (mx - mn + 1) * stride);
+    // The indices count from the first vertex used: some drivers (Intel's D3D9 layer, igd9trinity32) read the vertex
+    // data from vertex 0 whatever MinVertexIndex says, so a pointer "mn vertices before" a converted block read memory
+    // before it and crashed (the first mission on Intel graphics).
+    if (mn) {
+        g_tmp_rebased.resize(nidx);
+        for (uint32_t i = 0; i < nidx; i++) g_tmp_rebased[i] = (uint16_t)(idx[i] - mn);
+        idx = g_tmp_rebased.data();
+        verts = (const uint8_t *)verts + (size_t)mn * stride;
+        mx -= mn;
+        mn = 0;
+    }
     if (p.quads) {
         g_tmp_indices.resize(p.count * 3);
         for (uint32_t q = 0; q < nidx / 4; q++) {
