@@ -24,7 +24,7 @@ parts of the Xbox it talks to (kernel, Direct3D 8, DirectSound, controller libra
 | Crouch | **Hold to crouch** (crouch while Ctrl is held), whatever the game profile says, in PC SETTINGS > CONTROLS > CROUCH. |
 | Weapons | Keys **1** and **2** select the first or second weapon you carry; **Q** swaps between them. |
 | Walk | **Shift** to walk slowly, at 25% of full speed (`walk_speed` in `black.ini`). |
-| Audio | First start (no saved profile yet): sound effects at 60% and music at 40% in the game's audio settings. |
+| Audio | Sound effects start at 60% and music at 40%. The volumes you set in the game's sound options (main menu or pause menu) are kept in black.ini and stay the same at every mission start. |
 | Prompts | Follow the device in use: your bound keys with keyboard and mouse ("Press [F] to pick up", [ENTER] confirm), the controller's buttons with a controller, switching at once. |
 | Menus | Controller options readable in the Portuguese translation (YES / NO instead of overlapping ON / OFF words). |
 | Ambient occlusion | **SSAO** or **GTAO** (off by default), in PC SETTINGS > MODS. |

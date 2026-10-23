@@ -69,6 +69,8 @@ void settings_load()
         else if (k == "mouse_sens") g_cfg.mouse_sens = std::clamp(v, 0.1f, 50.0f);
         else if (k == "mouse_invert") g_cfg.mouse_invert = v != 0;
         else if (k == "pad_sens") g_cfg.pad_sens = std::clamp(v, 0.1f, 10.0f);
+        else if (k == "sound_volume") g_cfg.sfx_volume = std::clamp(atoi(val), 0, 100);
+        else if (k == "music_volume") g_cfg.music_volume = std::clamp(atoi(val), 0, 100);
         // the release's black.ini says so: its first start counts as one (autotune.cpp); never written back
         else if (k == "first_start") g_cfg.first_run = v != 0;        else if (k == "aim_hold") g_cfg.aim_hold = v != 0;
         else if (k == "crouch_hold") g_cfg.crouch_hold = v != 0;
@@ -137,7 +139,8 @@ void settings_save()
     fprintf(f, "aa = %d\nfps = %d\nwidescreen = %d\nfullscreen = %d\n", g_cfg.aa ? 1 : 0, fps, wide ? 1 : 0, g_cfg.fullscreen ? 1 : 0);
     fprintf(f, "gain = %.2f\ngamma = %.2f\n", g_cfg.gain, g_cfg.gamma);
     fprintf(f, "mouse_sens = %.3f\nmouse_invert = %d\n", g_cfg.mouse_sens, g_cfg.mouse_invert ? 1 : 0);
-    fprintf(f, "pad_sens = %.3f\n", g_cfg.pad_sens);    fprintf(f, "aim_hold = %d\ncrouch_hold = %d\nwalk_speed = %.2f\n", g_cfg.aim_hold ? 1 : 0, g_cfg.crouch_hold ? 1 : 0, g_cfg.walk_speed);
+    fprintf(f, "pad_sens = %.3f\n", g_cfg.pad_sens);
+    fprintf(f, "sound_volume = %d\nmusic_volume = %d\n", g_cfg.sfx_volume, g_cfg.music_volume);    fprintf(f, "aim_hold = %d\ncrouch_hold = %d\nwalk_speed = %.2f\n", g_cfg.aim_hold ? 1 : 0, g_cfg.crouch_hold ? 1 : 0, g_cfg.walk_speed);
     fprintf(f, "hd_reticle = %d\n", g_cfg.hd_reticle ? 1 : 0);
     fprintf(f, "texture_pack = %s\ntexture_pack_max = %d\n", narrow(g_cfg.texture_pack).c_str(), g_cfg.texture_pack_max);
     if (g_cfg.reticle_colour >= 0) fprintf(f, "reticle_colour = %06X\n", g_cfg.reticle_colour);

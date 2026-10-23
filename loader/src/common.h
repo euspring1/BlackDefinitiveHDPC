@@ -68,6 +68,7 @@ struct Config {
     // scale most PC shooters use.
     float mouse_sens = 2.0f;
     bool mouse_invert = false;
+    int sfx_volume = 60, music_volume = 40; // percent; the game's sound options set them (audio_defaults.cpp)
     float pad_sens = 1.0f;     // times the game's right stick look speeds while the controller is in use (mouselook.cpp)
     bool first_run = false;    // no black.ini at start (settings.cpp)
     bool auto_tune = false;    // first session only: the render size follows what the PC keeps up with (autotune.cpp)
