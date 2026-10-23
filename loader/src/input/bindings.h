@@ -58,6 +58,7 @@ bool menu_select_held(); // Enter held in a menu or movie (movies: skip)
 // Tests: --press "SECONDSs:k:Name" holds a key (black.ini spelling) for the next poll, without focus.
 void script_hold(const std::string &name);
 bool any_key_held(bool focus); // a key or mouse button is down (or a scripted key held): the keyboard and mouse in use
+void install_pad_layout();      // DEFAULT controller layout: a modern shooter's; the second preset: the game's own
 
 // In-game key capture (the KEY BINDINGS page, fe/bind_list.cpp): the next key or mouse button pressed after all are
 // released binds to (action, slot) and is taken from any other action; Esc cancels, Delete clears the slot. Meanwhile

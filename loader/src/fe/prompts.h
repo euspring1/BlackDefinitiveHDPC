@@ -24,5 +24,4 @@ void install(); // the hook on the game's text bank (known build only)
 bool pad();                 // the controller's prompts are shown
 void set_mode(int mode);    // 0 automatic, 1 keyboard and mouse, 2 controller (g_cfg.input_mode)
 void note_input(bool pad, bool keyboard_mouse); // once per input poll: what was used in it
-
 } // namespace prompts

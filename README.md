@@ -28,7 +28,7 @@ parts of the Xbox it talks to (kernel, Direct3D 8, DirectSound, controller libra
 | Prompts | Follow the device in use: your bound keys with keyboard and mouse ("Press [F] to pick up", [ENTER] confirm), the controller's buttons with a controller, switching at once. |
 | Menus | Controller options readable in the Portuguese translation (YES / NO instead of overlapping ON / OFF words). |
 | Ambient occlusion | **SSAO** or **GTAO** (off by default), in PC SETTINGS > MODS. |
-| Controller | **Controller sensitivity** (right stick), in PC SETTINGS > INPUT. |
+| Controller | **Controller sensitivity** (right stick), in PC SETTINGS > INPUT. The default controller layout is **modern (COD style)**: LT aim, RT fire, RB grenade, LB health pack, X reload, A use, B crouch, R3 melee, Y switch weapon. The game's original layout is the **BLACK** preset, and every button can be changed in the game's Options > Controller > Custom. |
 | Mouse in menus | The row under the cursor is highlighted; left click confirms (or changes the value), right click goes back, the wheel scrolls. The keyboard keeps the highlight until the mouse is moved. |
 | Mods | A `game\mods\` folder: each mod is a folder whose `game\` files replace the game's. PC SETTINGS > MODS turns each one on or off; the game restarts by itself when you return to the main menu. |
 | Field of view | Field of view (default **100**) and **weapon field of view** (default **85**) side by side in PC SETTINGS > AUDIO AND GAME. |
@@ -211,8 +211,7 @@ This builds `black.exe` and `blackrt.dll`.
 ### Projects studied
 
 - black-pc by Spark198rus — native Windows port of BLACK, compared for features.
-- black-pc-modloader by Darketz — mods, mouse in the menus, FPS counter, movie subtitles, 16:9 HUD and weapon field of
-  view, adapted from its code.
+- black-pc-modloader by Darketz — mod loader for black-pc, studied and compared for features.
 - BLACK-XBERecomp by TGP482 — another PC version of BLACK (static recompilation), studied and compared for features.
 - BLACK-SUBTITLES by soldieg — translations and subtitles.
 - Cxbx-Reloaded and xemu — references for how the Xbox kernel and the NV2A graphics chip behave (no code copied).

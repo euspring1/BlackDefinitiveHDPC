@@ -301,6 +301,34 @@ const int32_t *game_table()
     return t ? t : (const int32_t *)(uintptr_t)0x002A7AF0; // before the game sets it up: its default preset
 }
 
+} // namespace
+
+// The controller layouts (Options > Controller setup): the game's presets at 0x2A7AF0, 0x94 bytes each (default,
+// assault, scout, southpaw, custom). DEFAULT becomes a modern shooter's layout; the second preset (named BLACK in the
+// game's text, fe/pages.cpp) holds the game's own default; scout, southpaw and custom stay. The profile keeps the
+// preset it chose, so DEFAULT is the modern one for every profile that never chose another.
+void install_pad_layout()
+{
+    auto *presets = (int32_t *)(uintptr_t)0x002A7AF0;
+    int32_t *def = presets, *second = presets + 0x94 / 4;
+    // the game's own default: fire RT, aim R3, grenade LT, reload A, use X
+    if (def[9] != 23 || def[16] != 15 || def[27] != 22 || def[11] != 16 || def[13] != 18) {
+        logf("[input] controller presets are not the game's own; layouts unchanged");
+        return;
+    }
+    DWORD old;
+    if (!VirtualProtect(presets, 2 * 0x94, PAGE_READWRITE, &old)) return;
+    memcpy(second, def, 0x94);
+    // action (binding table index) -> channel: RT fire, LT aim, RB grenade, LB health pack, X reload, A use / pick up,
+    // B crouch, R3 melee, Y next weapon, D-pad left previous weapon, up firing mode, down suppressor
+    static const int32_t kModern[][2] = {{9, 23}, {16, 22}, {27, 20}, {33, 21}, {11, 18}, {13, 16},
+                                         {12, 17}, {32, 15}, {14, 19}, {15, 2},  {30, 0},  {31, 1}};
+    for (const auto &m : kModern) def[m[0]] = m[1];
+    logf("[input] controller layouts: DEFAULT is the modern layout (LT aim, RT fire, RB grenade), BLACK the game's own");
+}
+
+namespace {
+
 struct Pad {
     uint16_t buttons = 0;
     uint8_t analog[8] = {};

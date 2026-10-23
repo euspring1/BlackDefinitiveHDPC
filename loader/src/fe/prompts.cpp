@@ -32,7 +32,10 @@ uint32_t g_bank;                                    // the game's loaded bank, 0
 std::atomic<bool> g_pad{false};
 std::vector<std::wstring> g_legend_keys;
 
-// {key, text NUL} entries in memory of the port's that is never freed (the game holds pointers into it)
+// {key, text NUL} entries in memory of the port's that is never freed (the game holds pointers into it). The controller
+// icons in the text (U+F000 + an action's index in the binding table) are drawn by the game as the button that action
+// has in the layout in use (the text code at 0x113C33: *0x2F3BD4[code] -> the button's icon by its name at 0x2AC290),
+// so every layout, the player's own too, shows the right buttons.
 std::vector<uint32_t> entries(bool pad)
 {
     size_t size = 0;

@@ -26,6 +26,7 @@
 #include "timing.h"
 #include "settings.h"
 #include "input/autoaim.h"
+#include "input/bindings.h"
 #include "input/mouselook.h"
 #include "kernel/ktable.h"
 #include "kernel/xboxkrnl.h"
@@ -536,6 +537,7 @@ int run(void *reserve, unsigned reserve_size)
     if (known_build) audio_defaults_init();
     if (known_build) install_fe_calls();
     if (known_build) prompts::install();
+    if (known_build) bindings::install_pad_layout();
     if (known_build) occlusion::install();
     mods::scan(); // before the pages are built: the MODS page lists them
     if (known_build && g_cfg.pc_menus) { // the in-game PC SETTINGS pages, from the user's own front-end file

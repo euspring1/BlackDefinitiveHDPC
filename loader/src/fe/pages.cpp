@@ -1830,8 +1830,15 @@ bool patch_strings(const std::wstring &game_dir, const std::wstring &out_root)
             // too long for it and overlap, so they read as one word. Short words like the original's.
             if (key == 0x11c3b459 && t == "Ligado") t = "Sim";
             if (key == 0x45c04449 && t.find("Desligado") != std::string::npos) t = lang::font_text("Não");
+            // the second controller layout holds the game's own default (input/bindings.cpp install_pad_layout)
+            if (key == 0xCA9AEA76) t = lang::font_text("Black");
             changed += t != s;
             prompts::Text v{key, t, t};
+            // the game puts the button's own word (PRESS, PULL, CLICK) before an icon: an English "press " before one
+            // read "PRESS PRESS" once the layout gave the action another kind of button
+            if (lang::current() == lang::kEnglish)
+                for (const char *w : {"press \xEF\x80", "Press \xEF\x80", "PRESS \xEF\x80"})
+                    for (size_t p = v.pad.find(w); p != std::string::npos; p = v.pad.find(w, p)) v.pad.erase(p, 6);
             int g = button_glyphs_to_keys(key, v.keys);
             glyphs += g;
             prompt_strings += g > 0;
